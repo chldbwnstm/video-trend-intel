@@ -1,0 +1,582 @@
+{
+ "total": 1032,
+ "data": [
+  {
+   "id": 192,
+   "uuid": "1cb8a74d-19c7-469e-8d1c-ecddaa2feb0e",
+   "shortUUID": "4xGRRXbfotzVfB6Z3f8xvG",
+   "score": 1,
+   "createdAt": "2026-09-19T14:01:07.756Z",
+   "updatedAt": "2026-09-25T05:17:12.355Z",
+   "publishedAt": "2026-09-19T14:02:07.080Z",
+   "originallyPublishedAt": null,
+   "category": {
+    "id": 7,
+    "label": "Gaming"
+   },
+   "licence": {
+    "id": null,
+    "label": "Unknown"
+   },
+   "language": {
+    "id": "ko",
+    "label": "Korean"
+   },
+   "privacy": {
+    "id": 1,
+    "label": "Public"
+   },
+   "name": "명일방주 PA-6",
+   "description": null,
+   "truncatedDescription": null,
+   "duration": 104,
+   "tags": [
+    "Arknightgs",
+    "명일방주"
+   ],
+   "thumbnailPath": "/lazy-static/thumbnails/5b2d7539-cfbc-4990-aeb5-21d4574f844d.png",
+   "thumbnailUrl": "https://onair.sbs/lazy-static/thumbnails/5b2d7539-cfbc-4990-aeb5-21d4574f844d.png",
+   "previewPath": "/lazy-static/thumbnails/53093d3c-9fb1-4582-931a-569a7137a0fc.png",
+   "previewUrl": "https://onair.sbs/lazy-static/thumbnails/53093d3c-9fb1-4582-931a-569a7137a0fc.png",
+   "thumbnails": [
+    {
+     "height": 157,
+     "width": 280,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://onair.sbs/lazy-static/thumbnails/5b2d7539-cfbc-4990-aeb5-21d4574f844d.png"
+    },
+    {
+     "height": 480,
+     "width": 850,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://onair.sbs/lazy-static/thumbnails/e82d1f57-74c5-4a65-9c48-f86deba6280e.png"
+    },
+    {
+     "height": 720,
+     "width": 1280,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://onair.sbs/lazy-static/thumbnails/a3f04b0d-9b74-403b-bdbb-9e5a29d90e80.png"
+    },
+    {
+     "height": 1400,
+     "width": 1400,
+     "aspectRatio": "1:1",
+     "fileUrl": "https://onair.sbs/lazy-static/thumbnails/726c6f91-abeb-4a25-b6f3-3ea0faa27a56.png"
+    },
+    {
+     "height": 1080,
+     "width": 1920,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://onair.sbs/lazy-static/thumbnails/53093d3c-9fb1-4582-931a-569a7137a0fc.png"
+    }
+   ],
+   "embedPath": "/videos/embed/4xGRRXbfotzVfB6Z3f8xvG",
+   "embedUrl": "https://onair.sbs/videos/embed/4xGRRXbfotzVfB6Z3f8xvG",
+   "url": "https://onair.sbs/videos/watch/1cb8a74d-19c7-469e-8d1c-ecddaa2feb0e",
+   "isLocal": false,
+   "views": 1,
+   "viewers": 0,
+   "likes": 0,
+   "dislikes": 0,
+   "comments": 0,
+   "isLive": false,
+   "nsfw": false,
+   "nsfwFlags": 0,
+   "nsfwSummary": null,
+   "aspectRatio": 1.7778,
+   "account": {
+    "id": 85329,
+    "name": "vallisneria",
+    "displayName": "발리스네리아",
+    "url": "https://onair.sbs/accounts/vallisneria",
+    "host": "onair.sbs",
+    "avatars": [
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/97376640-6a7a-4599-9d49-0e309c27c10d.png",
+      "path": "/lazy-static/avatars/97376640-6a7a-4599-9d49-0e309c27c10d.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/97376640-6a7a-4599-9d49-0e309c27c10d.png",
+      "width": 48,
+      "createdAt": "2024-09-07T13:07:46.586Z",
+      "updatedAt": "2024-09-07T13:07:46.586Z"
+     },
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/54730946-b884-4a23-8ceb-ece7b3023b9e.png",
+      "path": "/lazy-static/avatars/54730946-b884-4a23-8ceb-ece7b3023b9e.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/54730946-b884-4a23-8ceb-ece7b3023b9e.png",
+      "width": 120,
+      "createdAt": "2024-09-07T13:07:46.586Z",
+      "updatedAt": "2024-09-07T13:07:46.586Z"
+     },
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/f70e9005-5ab7-4f3b-aea7-6888594f7a65.png",
+      "path": "/lazy-static/avatars/f70e9005-5ab7-4f3b-aea7-6888594f7a65.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/f70e9005-5ab7-4f3b-aea7-6888594f7a65.png",
+      "width": 600,
+      "createdAt": "2024-09-07T13:07:46.584Z",
+      "updatedAt": "2024-09-07T13:07:46.584Z"
+     },
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/e33d91e4-6deb-4dda-969b-328a58489355.png",
+      "path": "/lazy-static/avatars/e33d91e4-6deb-4dda-969b-328a58489355.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/e33d91e4-6deb-4dda-969b-328a58489355.png",
+      "width": 1500,
+      "createdAt": "2024-09-07T13:07:46.583Z",
+      "updatedAt": "2024-09-07T13:07:46.583Z"
+     }
+    ]
+   },
+   "channel": {
+    "id": 10,
+    "name": "neria_arknights",
+    "displayName": "명일방주",
+    "url": "https://onair.sbs/video-channels/neria_arknights",
+    "host": "onair.sbs",
+    "avatars": [
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/a7d98a7d-746c-4ac4-aa44-68035097df5e.png",
+      "path": "/lazy-static/avatars/a7d98a7d-746c-4ac4-aa44-68035097df5e.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/a7d98a7d-746c-4ac4-aa44-68035097df5e.png",
+      "width": 48,
+      "createdAt": "2026-09-19T14:11:15.754Z",
+      "updatedAt": "2026-09-19T14:11:15.754Z"
+     },
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/38f26a7e-8c2d-41c6-a42c-4d6d7af4e2b0.png",
+      "path": "/lazy-static/avatars/38f26a7e-8c2d-41c6-a42c-4d6d7af4e2b0.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/38f26a7e-8c2d-41c6-a42c-4d6d7af4e2b0.png",
+      "width": 120,
+      "createdAt": "2026-09-19T14:11:15.752Z",
+      "updatedAt": "2026-09-19T14:11:15.752Z"
+     },
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/c704f150-d83e-4c9b-a878-ff123060bbe9.png",
+      "path": "/lazy-static/avatars/c704f150-d83e-4c9b-a878-ff123060bbe9.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/c704f150-d83e-4c9b-a878-ff123060bbe9.png",
+      "width": 600,
+      "createdAt": "2026-09-19T14:11:15.750Z",
+      "updatedAt": "2026-09-19T14:11:15.750Z"
+     },
+     {
+      "url": "https://onair.sbs/lazy-static/avatars/2c71ffc8-5cf4-4db4-8c2a-d78cb8b65df9.png",
+      "path": "/lazy-static/avatars/2c71ffc8-5cf4-4db4-8c2a-d78cb8b65df9.png",
+      "fileUrl": "https://onair.sbs/lazy-static/avatars/2c71ffc8-5cf4-4db4-8c2a-d78cb8b65df9.png",
+      "width": 1500,
+      "createdAt": "2026-09-19T14:11:15.713Z",
+      "updatedAt": "2026-09-19T14:11:15.713Z"
+     }
+    ]
+   },
+   "hotScore": 7323.2168459527875,
+   "rawHotScore": 7323.2168459527875
+  },
+  {
+   "id": 42058,
+   "uuid": "b6c56473-3e4d-426b-b646-97e9582ca9fa",
+   "shortUUID": "oz2i41fXzwuhEnN2EBVLk5",
+   "score": 1,
+   "createdAt": "2026-09-11T10:34:26.594Z",
+   "updatedAt": "2026-09-11T10:37:55.779Z",
+   "publishedAt": "2026-09-11T10:37:55.779Z",
+   "originallyPublishedAt": "2026-09-11T00:00:00.000Z",
+   "category": {
+    "id": null,
+    "label": "Unknown"
+   },
+   "licence": {
+    "id": null,
+    "label": "Unknown"
+   },
+   "language": {
+    "id": "ko",
+    "label": "Korean"
+   },
+   "privacy": {
+    "id": 1,
+    "label": "Public"
+   },
+   "name": "한국인 공예가 둘이서 작정하고 만든 럭셔리 하이엔드 씹덕 마스크",
+   "description": "#만들기 \n\n📩hahnsatelier@gmail.com\n🌿Instagram: @hahns_atelier",
+   "truncatedDescription": "#만들기 \n\n📩hahnsatelier@gmail.com\n🌿Instagram: @hahns_atelier",
+   "duration": 563,
+   "tags": [],
+   "thumbnailPath": "/lazy-static/thumbnails/c0234f1f-d49d-4b22-b0a6-2d0a8e417e4f.jpg",
+   "thumbnailUrl": "https://tube.blueben.net/lazy-static/thumbnails/c0234f1f-d49d-4b22-b0a6-2d0a8e417e4f.jpg",
+   "previewPath": "/lazy-static/previews/af5a811b-d801-45f6-832e-da1e5bfccb59.jpg",
+   "previewUrl": "https://tube.blueben.net/lazy-static/previews/af5a811b-d801-45f6-832e-da1e5bfccb59.jpg",
+   "thumbnails": [
+    {
+     "aspectRatio": "16:9",
+     "width": 280,
+     "height": 157,
+     "fileUrl": "https://tube.blueben.net/lazy-static/thumbnails/c0234f1f-d49d-4b22-b0a6-2d0a8e417e4f.jpg"
+    },
+    {
+     "aspectRatio": "16:9",
+     "width": 850,
+     "height": 480,
+     "fileUrl": "https://tube.blueben.net/lazy-static/previews/af5a811b-d801-45f6-832e-da1e5bfccb59.jpg"
+    }
+   ],
+   "embedPath": "/videos/embed/oz2i41fXzwuhEnN2EBVLk5",
+   "embedUrl": "https://tube.blueben.net/videos/embed/oz2i41fXzwuhEnN2EBVLk5",
+   "url": "https://tube.blueben.net/videos/watch/b6c56473-3e4d-426b-b646-97e9582ca9fa",
+   "isLocal": false,
+   "views": 0,
+   "viewers": 0,
+   "likes": 0,
+   "dislikes": 0,
+   "isLive": false,
+   "nsfw": false,
+   "nsfwFlags": 0,
+   "aspectRatio": 1.7778,
+   "account": {
+    "id": 5720,
+    "name": "fashion_style",
+    "displayName": "Fashion & Style",
+    "url": "https://tube.blueben.net/accounts/fashion_style",
+    "host": "tube.blueben.net",
+    "avatars": [
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/333ef5f9-89e7-48e0-8935-4d45daa50950.jpg",
+      "path": "/lazy-static/avatars/333ef5f9-89e7-48e0-8935-4d45daa50950.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/333ef5f9-89e7-48e0-8935-4d45daa50950.jpg",
+      "width": 48,
+      "createdAt": "2025-07-28T13:29:09.548Z",
+      "updatedAt": "2025-07-28T13:29:09.548Z"
+     },
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/6b751a0e-aee4-47ad-9fb6-5a0d6b6f63f2.jpg",
+      "path": "/lazy-static/avatars/6b751a0e-aee4-47ad-9fb6-5a0d6b6f63f2.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/6b751a0e-aee4-47ad-9fb6-5a0d6b6f63f2.jpg",
+      "width": 120,
+      "createdAt": "2025-07-28T13:29:09.545Z",
+      "updatedAt": "2025-07-28T13:29:09.545Z"
+     },
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/22dd7ae9-61d8-401b-bcec-0c8652f3099d.jpg",
+      "path": "/lazy-static/avatars/22dd7ae9-61d8-401b-bcec-0c8652f3099d.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/22dd7ae9-61d8-401b-bcec-0c8652f3099d.jpg",
+      "width": 600,
+      "createdAt": "2025-07-28T13:29:09.542Z",
+      "updatedAt": "2025-07-28T13:29:09.542Z"
+     },
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/8e1f072b-3413-4503-a5ec-aa894d0f7cfb.jpg",
+      "path": "/lazy-static/avatars/8e1f072b-3413-4503-a5ec-aa894d0f7cfb.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/8e1f072b-3413-4503-a5ec-aa894d0f7cfb.jpg",
+      "width": 1500,
+      "createdAt": "2025-07-28T13:29:09.537Z",
+      "updatedAt": "2025-07-28T13:29:09.537Z"
+     }
+    ]
+   },
+   "channel": {
+    "id": 47,
+    "name": "hahnsatelier",
+    "displayName": "HAHNS ATELIER",
+    "url": "https://tube.blueben.net/video-channels/hahnsatelier",
+    "host": "tube.blueben.net",
+    "avatars": [
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/60822fea-5cad-44b9-adbc-27aec6a4076f.jpg",
+      "path": "/lazy-static/avatars/60822fea-5cad-44b9-adbc-27aec6a4076f.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/60822fea-5cad-44b9-adbc-27aec6a4076f.jpg",
+      "width": 48,
+      "createdAt": "2025-06-23T20:17:39.112Z",
+      "updatedAt": "2025-06-23T20:17:39.112Z"
+     },
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/1a7f815a-a952-48a2-ac22-c7da969bdb50.jpg",
+      "path": "/lazy-static/avatars/1a7f815a-a952-48a2-ac22-c7da969bdb50.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/1a7f815a-a952-48a2-ac22-c7da969bdb50.jpg",
+      "width": 120,
+      "createdAt": "2025-06-23T20:17:39.111Z",
+      "updatedAt": "2025-06-23T20:17:39.111Z"
+     },
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/51df7e8f-0dd1-4a98-b8a5-5b092ee31799.jpg",
+      "path": "/lazy-static/avatars/51df7e8f-0dd1-4a98-b8a5-5b092ee31799.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/51df7e8f-0dd1-4a98-b8a5-5b092ee31799.jpg",
+      "width": 600,
+      "createdAt": "2025-06-23T20:17:39.108Z",
+      "updatedAt": "2025-06-23T20:17:39.108Z"
+     },
+     {
+      "url": "https://tube.blueben.net/lazy-static/avatars/a8a6eab3-8bec-4049-9e85-5dba01706883.jpg",
+      "path": "/lazy-static/avatars/a8a6eab3-8bec-4049-9e85-5dba01706883.jpg",
+      "fileUrl": "https://tube.blueben.net/lazy-static/avatars/a8a6eab3-8bec-4049-9e85-5dba01706883.jpg",
+      "width": 1500,
+      "createdAt": "2025-06-23T20:17:39.105Z",
+      "updatedAt": "2025-06-23T20:17:39.105Z"
+     }
+    ]
+   },
+   "hotScore": 0.01397858038251936,
+   "rawHotScore": 7297.159442106384
+  },
+  {
+   "id": 588976,
+   "uuid": "2daeb3a6-a216-4631-a3c0-0b74a5ddf8ab",
+   "shortUUID": "6DbwGTGwjtjY1EyYMpvZzn",
+   "score": 1,
+   "createdAt": "2026-09-24T13:29:58.583Z",
+   "updatedAt": "2026-09-24T18:59:35.214Z",
+   "publishedAt": "2026-09-24T13:31:00.738Z",
+   "originallyPublishedAt": null,
+   "category": {
+    "id": null,
+    "label": "Unknown"
+   },
+   "licence": {
+    "id": 8,
+    "label": "Free of known copyright restrictions"
+   },
+   "language": {
+    "id": "ko",
+    "label": "Korean"
+   },
+   "privacy": {
+    "id": 1,
+    "label": "Public"
+   },
+   "name": "Golazo de Corea del Sur en el debut de Marcelo Gallardo como técnico de Ecuador",
+   "description": null,
+   "truncatedDescription": null,
+   "duration": 11,
+   "tags": [],
+   "thumbnailPath": "/lazy-static/thumbnails/72ab2732-5e04-420f-809b-b7e513040f73.jpg",
+   "thumbnailUrl": "https://tube.xy-space.de/lazy-static/thumbnails/72ab2732-5e04-420f-809b-b7e513040f73.jpg",
+   "previewPath": "/lazy-static/thumbnails/59dee0b4-f5a4-4c6b-83ae-cdff45feccc9.jpg",
+   "previewUrl": "https://tube.xy-space.de/lazy-static/thumbnails/59dee0b4-f5a4-4c6b-83ae-cdff45feccc9.jpg",
+   "thumbnails": [
+    {
+     "height": 1080,
+     "width": 1920,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://tube.xy-space.de/lazy-static/thumbnails/59dee0b4-f5a4-4c6b-83ae-cdff45feccc9.jpg"
+    },
+    {
+     "height": 1400,
+     "width": 1400,
+     "aspectRatio": "1:1",
+     "fileUrl": "https://tube.xy-space.de/lazy-static/thumbnails/29c3de77-9660-4d97-8420-9d1251bdb325.jpg"
+    },
+    {
+     "height": 720,
+     "width": 1280,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://tube.xy-space.de/lazy-static/thumbnails/f7008d5e-0aa5-4e15-96b7-3cc263558ad2.jpg"
+    },
+    {
+     "height": 480,
+     "width": 850,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://tube.xy-space.de/lazy-static/thumbnails/e27666f4-c128-43e5-b6b2-af36ea22eb67.jpg"
+    },
+    {
+     "height": 157,
+     "width": 280,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://tube.xy-space.de/lazy-static/thumbnails/72ab2732-5e04-420f-809b-b7e513040f73.jpg"
+    }
+   ],
+   "embedPath": "/videos/embed/6DbwGTGwjtjY1EyYMpvZzn",
+   "embedUrl": "https://tube.xy-space.de/videos/embed/6DbwGTGwjtjY1EyYMpvZzn",
+   "url": "https://tube.xy-space.de/videos/watch/2daeb3a6-a216-4631-a3c0-0b74a5ddf8ab",
+   "isLocal": false,
+   "views": 1,
+   "viewers": 0,
+   "likes": 0,
+   "dislikes": 0,
+   "comments": 0,
+   "isLive": false,
+   "nsfw": false,
+   "nsfwFlags": 0,
+   "nsfwSummary": null,
+   "aspectRatio": 1.7889,
+   "account": {
+    "id": 932687,
+    "name": "la_derecha_diario",
+    "displayName": "La Derecha Diario",
+    "url": "https://tube.xy-space.de/accounts/la_derecha_diario",
+    "host": "tube.xy-space.de",
+    "avatars": []
+   },
+   "channel": {
+    "id": 17619,
+    "name": "derecha_diario",
+    "displayName": "Derecha Diario",
+    "url": "https://tube.xy-space.de/video-channels/derecha_diario",
+    "host": "tube.xy-space.de",
+    "avatars": []
+   },
+   "hotScore": 5.809300931081107e-16,
+   "rawHotScore": 7332.368625910234
+  },
+  {
+   "id": 942221,
+   "uuid": "7846f6da-6532-4d27-932e-2c74464b8d96",
+   "shortUUID": "fRrh9aQNhbWqmMfxFSAdk9",
+   "score": 1,
+   "createdAt": "2026-09-18T10:01:45.136Z",
+   "updatedAt": "2026-09-24T21:32:02.228Z",
+   "publishedAt": "2026-09-24T21:19:18.804Z",
+   "originallyPublishedAt": "2024-05-13T00:00:00.000Z",
+   "category": {
+    "id": 10,
+    "label": "Entertainment"
+   },
+   "licence": {
+    "id": null,
+    "label": "Unknown"
+   },
+   "language": {
+    "id": "ko",
+    "label": "Korean"
+   },
+   "privacy": {
+    "id": 1,
+    "label": "Public"
+   },
+   "name": "Jacopo Amigoni, alcune pitture a carattere mitologico",
+   "description": "#arte  #pittura  #dipinti  #video   #mitologia  #capolavori  #immagini  #Amigoni #pittore  #arcadica\n\nCon l'opera dell'Amigoni la pittura arcadica europea raggiunge il suo apogeo: tanto nelle decorazioni che nelle sue tele mostra leggerezza e graz...",
+   "truncatedDescription": "#arte  #pittura  #dipinti  #video   #mitologia  #capolavori  #immagini  #Amigoni #pittore  #arcadica\n\nCon l'opera dell'Amigoni la pittura arcadica europea raggiunge il suo apogeo: tanto nelle decorazioni che nelle sue tele mostra leggerezza e graz...",
+   "duration": 176,
+   "tags": [],
+   "thumbnailPath": "/lazy-static/thumbnails/5134a42a-0a61-44ed-a31c-2edee1590d47.webp",
+   "thumbnailUrl": "https://makertube.net/lazy-static/thumbnails/5134a42a-0a61-44ed-a31c-2edee1590d47.webp",
+   "previewPath": "/lazy-static/thumbnails/ad123b2c-fcf4-4625-9cd8-c82feb8b26a8.webp",
+   "previewUrl": "https://makertube.net/lazy-static/thumbnails/ad123b2c-fcf4-4625-9cd8-c82feb8b26a8.webp",
+   "thumbnails": [
+    {
+     "height": 157,
+     "width": 280,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://makertube.net/lazy-static/thumbnails/5134a42a-0a61-44ed-a31c-2edee1590d47.webp"
+    },
+    {
+     "height": 480,
+     "width": 850,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://makertube.net/lazy-static/thumbnails/bcecf991-8770-459d-ab95-9da8217f91d6.webp"
+    },
+    {
+     "height": 720,
+     "width": 1280,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://makertube.net/lazy-static/thumbnails/80cce4c8-cf2b-444e-be9f-b3a37c0afb83.webp"
+    },
+    {
+     "height": 1400,
+     "width": 1400,
+     "aspectRatio": "1:1",
+     "fileUrl": "https://makertube.net/lazy-static/thumbnails/09602991-fd29-442b-b0d8-9d2b5a97bca2.webp"
+    },
+    {
+     "height": 1080,
+     "width": 1920,
+     "aspectRatio": "16:9",
+     "fileUrl": "https://makertube.net/lazy-static/thumbnails/ad123b2c-fcf4-4625-9cd8-c82feb8b26a8.webp"
+    }
+   ],
+   "embedPath": "/videos/embed/fRrh9aQNhbWqmMfxFSAdk9",
+   "embedUrl": "https://makertube.net/videos/embed/fRrh9aQNhbWqmMfxFSAdk9",
+   "url": "https://makertube.net/videos/watch/7846f6da-6532-4d27-932e-2c74464b8d96",
+   "isLocal": false,
+   "views": 0,
+   "viewers": 0,
+   "likes": 0,
+   "dislikes": 0,
+   "comments": 0,
+   "isLive": false,
+   "nsfw": false,
+   "nsfwFlags": 0,
+   "nsfwSummary": null,
+   "aspectRatio": 1.7792,
+   "account": {
+    "id": 1023924,
+    "name": "gaetano",
+    "displayName": "Gaetano Tanogabo",
+    "url": "https://makertube.net/accounts/gaetano",
+    "host": "makertube.net",
+    "avatars": [
+     {
+      "url": "https://makertube.net/lazy-static/avatars/06ced4df-be68-451d-a8f7-4434e5acfe9f.jpg",
+      "path": "/lazy-static/avatars/06ced4df-be68-451d-a8f7-4434e5acfe9f.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/06ced4df-be68-451d-a8f7-4434e5acfe9f.jpg",
+      "width": 48,
+      "createdAt": "2026-09-18T10:03:29.410Z",
+      "updatedAt": "2026-09-18T10:03:29.410Z"
+     },
+     {
+      "url": "https://makertube.net/lazy-static/avatars/b58ea82d-766d-4c94-af5b-404c6ffc7ac7.jpg",
+      "path": "/lazy-static/avatars/b58ea82d-766d-4c94-af5b-404c6ffc7ac7.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/b58ea82d-766d-4c94-af5b-404c6ffc7ac7.jpg",
+      "width": 120,
+      "createdAt": "2026-09-18T10:03:29.400Z",
+      "updatedAt": "2026-09-18T10:03:29.400Z"
+     },
+     {
+      "url": "https://makertube.net/lazy-static/avatars/e971a22d-7c5c-465f-b43f-61501dd17553.jpg",
+      "path": "/lazy-static/avatars/e971a22d-7c5c-465f-b43f-61501dd17553.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/e971a22d-7c5c-465f-b43f-61501dd17553.jpg",
+      "width": 600,
+      "createdAt": "2026-09-18T10:03:29.304Z",
+      "updatedAt": "2026-09-18T10:03:29.304Z"
+     },
+     {
+      "url": "https://makertube.net/lazy-static/avatars/bcae149e-3a0f-4dab-9d78-7eac9c1441bd.jpg",
+      "path": "/lazy-static/avatars/bcae149e-3a0f-4dab-9d78-7eac9c1441bd.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/bcae149e-3a0f-4dab-9d78-7eac9c1441bd.jpg",
+      "width": 1500,
+      "createdAt": "2026-09-18T10:03:29.285Z",
+      "updatedAt": "2026-09-18T10:03:29.285Z"
+     }
+    ]
+   },
+   "channel": {
+    "id": 35482,
+    "name": "gaetanovideo",
+    "displayName": "Gaetano Tanogabo – Arte, Storia e Cultura",
+    "url": "https://makertube.net/video-channels/gaetanovideo",
+    "host": "makertube.net",
+    "avatars": [
+     {
+      "url": "https://makertube.net/lazy-static/avatars/f8cfffdd-e497-4b54-a5f2-d50ed1967c2a.jpg",
+      "path": "/lazy-static/avatars/f8cfffdd-e497-4b54-a5f2-d50ed1967c2a.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/f8cfffdd-e497-4b54-a5f2-d50ed1967c2a.jpg",
+      "width": 48,
+      "createdAt": "2026-09-18T10:17:59.622Z",
+      "updatedAt": "2026-09-18T10:17:59.622Z"
+     },
+     {
+      "url": "https://makertube.net/lazy-static/avatars/bb4706ff-46df-496d-b705-64fc3a5956ce.jpg",
+      "path": "/lazy-static/avatars/bb4706ff-46df-496d-b705-64fc3a5956ce.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/bb4706ff-46df-496d-b705-64fc3a5956ce.jpg",
+      "width": 120,
+      "createdAt": "2026-09-18T10:17:59.618Z",
+      "updatedAt": "2026-09-18T10:17:59.618Z"
+     },
+     {
+      "url": "https://makertube.net/lazy-static/avatars/d45914a7-43ad-4e80-8476-9215c743470b.jpg",
+      "path": "/lazy-static/avatars/d45914a7-43ad-4e80-8476-9215c743470b.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/d45914a7-43ad-4e80-8476-9215c743470b.jpg",
+      "width": 600,
+      "createdAt": "2026-09-18T10:17:59.612Z",
+      "updatedAt": "2026-09-18T10:17:59.612Z"
+     },
+     {
+      "url": "https://makertube.net/lazy-static/avatars/2c8b4134-65b0-41d9-916f-70e64fcf086f.jpg",
+      "path": "/lazy-static/avatars/2c8b4134-65b0-41d9-916f-70e64fcf086f.jpg",
+      "fileUrl": "https://makertube.net/lazy-static/avatars/2c8b4134-65b0-41d9-916f-70e64fcf086f.jpg",
+      "width": 1500,
+      "createdAt": "2026-09-18T10:17:59.601Z",
+      "updatedAt": "2026-09-18T10:17:59.601Z"
+     }
+    ]
+   },
+   "hotScore": 1.070093391171801e-28,
+   "rawHotScore": 7321.876102212764
+  }
+ ]
+}

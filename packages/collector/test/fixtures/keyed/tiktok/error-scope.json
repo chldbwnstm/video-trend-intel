@@ -1,0 +1,8 @@
+{
+  "data": {},
+  "error": {
+    "code": "scope_not_authorized",
+    "message": "The user did not authorize the scope required for completing this request.",
+    "log_id": "202309130920123C1B5A4E7AB2E3C4D5E6"
+  }
+}

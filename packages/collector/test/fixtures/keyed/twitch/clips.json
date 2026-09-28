@@ -1,0 +1,62 @@
+{
+  "data": [
+    {
+      "id": "AwkwardHelplessSalamanderSwiftRage",
+      "url": "https://clips.twitch.tv/AwkwardHelplessSalamanderSwiftRage",
+      "embed_url": "https://clips.twitch.tv/embed?clip=AwkwardHelplessSalamanderSwiftRage",
+      "broadcaster_id": "67955580",
+      "broadcaster_name": "ChewieMelodies",
+      "creator_id": "53834192",
+      "creator_name": "BlackNova03",
+      "video_id": "205586603",
+      "game_id": "488191",
+      "language": "en",
+      "title": "babymetal",
+      "view_count": 10,
+      "created_at": "2017-11-30T22:34:18Z",
+      "thumbnail_url": "https://clips-media-assets.twitch.tv/157589949-preview-480x272.jpg",
+      "duration": 60,
+      "vod_offset": 480,
+      "is_featured": false
+    },
+    {
+      "id": "BraveKoreanClipKappa-AbC123xyz",
+      "url": "https://clips.twitch.tv/BraveKoreanClipKappa-AbC123xyz",
+      "embed_url": "https://clips.twitch.tv/embed?clip=BraveKoreanClipKappa-AbC123xyz",
+      "broadcaster_id": "500000001",
+      "broadcaster_name": "한국스트리머",
+      "creator_id": "600000001",
+      "creator_name": "clipper",
+      "video_id": "",
+      "game_id": "493057",
+      "language": "ko",
+      "title": "치킨 먹는 순간",
+      "view_count": 5321,
+      "created_at": "2026-09-26T14:20:00Z",
+      "thumbnail_url": "https://clips-media-assets.twitch.tv/koreanclip-preview-480x272.jpg",
+      "duration": 12.9,
+      "vod_offset": null,
+      "is_featured": true
+    },
+    {
+      "id": "AsciiNameClipPogChamp",
+      "url": "https://clips.twitch.tv/AsciiNameClipPogChamp",
+      "embed_url": "https://clips.twitch.tv/embed?clip=AsciiNameClipPogChamp",
+      "broadcaster_id": "700000001",
+      "broadcaster_name": "KoGamer_1",
+      "creator_id": "600000002",
+      "creator_name": "clipper2",
+      "video_id": "",
+      "game_id": "493057",
+      "language": "ko",
+      "title": "원샷 원킬",
+      "view_count": 0,
+      "created_at": "2026-09-27T01:00:00Z",
+      "thumbnail_url": "https://clips-media-assets.twitch.tv/ascii-preview-480x272.jpg",
+      "duration": 30.4,
+      "vod_offset": 100,
+      "is_featured": false
+    }
+  ],
+  "pagination": { "cursor": "eyJiIjpudWxsLCJhIjoiIn0" }
+}

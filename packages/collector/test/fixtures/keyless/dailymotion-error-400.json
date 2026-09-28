@@ -1,0 +1,8 @@
+{
+ "error": {
+  "more_info": "https://developer.dailymotion.com/api#error-codes",
+  "code": 400,
+  "message": "Cannot use the `relevance` sort without the `search` filter",
+  "type": "invalid_parameter"
+ }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@vti/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "static-api": "tsx src/static-api.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "@vti/collector": "*",
+    "@vti/core": "*",
+    "hono": "^4.13.10"
+  }
+}

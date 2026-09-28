@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom">
+ <link rel="self" href="http://www.youtube.com/feeds/videos.xml?channel_id=UCyn-K7rZLXjGl7VXGweIlcA"/>
+ <id>yt:channel:yn-K7rZLXjGl7VXGweIlcA</id>
+ <yt:channelId>yn-K7rZLXjGl7VXGweIlcA</yt:channelId>
+ <title>백종원 PAIK JONG WON</title>
+ <link rel="alternate" href="https://www.youtube.com/channel/UCyn-K7rZLXjGl7VXGweIlcA"/>
+ <author>
+  <name>백종원 PAIK JONG WON</name>
+  <uri>https://www.youtube.com/channel/UCyn-K7rZLXjGl7VXGweIlcA</uri>
+ </author>
+ <published>2018-03-05T02:51:11+00:00</published>
+ <entry>
+  <id>yt:video:Da-yWFw5T3U</id>
+  <yt:videoId>Da-yWFw5T3U</yt:videoId>
+  <yt:channelId>UCyn-K7rZLXjGl7VXGweIlcA</yt:channelId>
+  <title>이게 왜 맛있지?</title>
+  <link rel="alternate" href="https://www.youtube.com/watch?v=Da-yWFw5T3U"/>
+  <author>
+   <name>백종원 PAIK JONG WON</name>
+   <uri>https://www.youtube.com/channel/UCyn-K7rZLXjGl7VXGweIlcA</uri>
+  </author>
+  <published>2026-09-15T02:00:33+00:00</published>
+  <updated>2026-09-25T20:49:16+00:00</updated>
+  <media:group>
+   <media:title>이게 왜 맛있지?</media:title>
+   <media:content url="https://www.youtube.com/v/Da-yWFw5T3U?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i1.ytimg.com/vi/Da-yWFw5T3U/hqdefault.jpg" width="480" height="360"/>
+   <media:description>버터밥! 맛있죠~
+그런데 버터가 국수랑도 꽤 잘 어울리더라고요.
+
+버터와 대파를 듬뿍 넣은 양념장에
+달걀프라이까지 올려 슥슥 비벼 먹는
+초간단 버터간장국수, 어떠세요?
+
+음… 이 맛은 마치
+충남 예산군 오가면 역탑리에서 만들어 먹던 간장국수를 하와이에 이민 가셔서 만드신 맛이랄까요?🤭
+
+-------------------
+
+*재료*
+소면 1인분 (100g)
+대파 약 1/2대 (40g)
+버터 1큰술 (12g)
+진간장 2큰술 (20g)
+설탕 1/2큰술 (6g)
+달걀 1개
+조미김가루 약간 (2g)
+식용유 적당량
+
+*만드는법*
+1. 대파는 길게 반 갈라 두께 0.3cm로 송송 썬다.
+2. 볼에 진간장, 설탕을 넣고 저어준 후 대파를 넣고 섞어 양념장을 만든다.
+3. 팬에 식용유를 넣고 달궈지면 달걀을 넣어 달걀프라이를 만든다.
+4. 끓는 물에 소면을 넣고 3분간 삶고 체에 밭쳐 물기를 뺀 후 그릇에 담는다.
+5. 뜨거운 소면 가운데에 버터를 올리고 그 위에 달걀프라이를 올린다.
+6. 양념장을 둘러 넣고, 조미김가루를 얹어 완성한다.
+
+#ButterSoySauceNoodles #kfood #paikjongwon</media:description>
+   <media:community>
+    <media:starRating count="0" average="0.00" min="1" max="5"/>
+    <media:statistics views="359270"/>
+   </media:community>
+  </media:group>
+ </entry>
+ <entry>
+  <id>yt:video:eKw9vkBKDB0</id>
+  <yt:videoId>eKw9vkBKDB0</yt:videoId>
+  <yt:channelId>UCyn-K7rZLXjGl7VXGweIlcA</yt:channelId>
+  <title>버터 한 조각으로 끝내는 버터간장국수</title>
+  <link rel="alternate" href="https://www.youtube.com/shorts/eKw9vkBKDB0"/>
+  <author>
+   <name>백종원 PAIK JONG WON</name>
+   <uri>https://www.youtube.com/channel/UCyn-K7rZLXjGl7VXGweIlcA</uri>
+  </author>
+  <published>2026-09-15T02:00:26+00:00</published>
+  <updated>2026-09-25T22:04:24+00:00</updated>
+  <media:group>
+   <media:title>버터 한 조각으로 끝내는 버터간장국수</media:title>
+   <media:content url="https://www.youtube.com/v/eKw9vkBKDB0?version=3" type="application/x-shockwave-flash" width="640" height="390"/>
+   <media:thumbnail url="https://i2.ytimg.com/vi/eKw9vkBKDB0/hqdefault.jpg" width="480" height="360"/>
+   <media:description>#ButterSoySauceNoodles #kfood #paikjongwon</media:description>
+   <media:community>
+    <media:starRating count="0" average="0.00" min="1" max="5"/>
+    <media:statistics views="60818"/>
+   </media:community>
+  </media:group>
+ </entry>
+</feed>

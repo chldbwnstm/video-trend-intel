@@ -1,0 +1,90 @@
+{
+  "data": [
+    {
+      "id": "1971234567890123456",
+      "text": "가을 스킨케어 꿀팁 영상 #스킨케어 #뷰티 https://t.co/AbCdEf1234",
+      "created_at": "2026-09-27T09:15:00.000Z",
+      "author_id": "2244994945",
+      "lang": "ko",
+      "edit_history_tweet_ids": ["1971234567890123456"],
+      "attachments": { "media_keys": ["7_1971234567000000001"] },
+      "entities": {
+        "hashtags": [
+          { "start": 15, "end": 20, "tag": "스킨케어" },
+          { "start": 21, "end": 24, "tag": "뷰티" }
+        ],
+        "urls": [{ "start": 25, "end": 48, "url": "https://t.co/AbCdEf1234", "media_key": "7_1971234567000000001" }]
+      },
+      "public_metrics": {
+        "repost_count": 7,
+        "reply_count": 3,
+        "like_count": 38,
+        "quote_count": 1,
+        "bookmark_count": 2,
+        "impression_count": 1250
+      }
+    },
+    {
+      "id": "1971234567890123457",
+      "text": "사진만 있는 게시물",
+      "created_at": "2026-09-27T08:00:00.000Z",
+      "author_id": "2244994945",
+      "lang": "ko",
+      "attachments": { "media_keys": ["3_1971234567000000002"] },
+      "public_metrics": { "repost_count": 0, "reply_count": 0, "like_count": 1, "quote_count": 0, "bookmark_count": 0, "impression_count": 40 }
+    },
+    {
+      "id": "1971234567890123458",
+      "text": "\n\n브이로그 https://t.co/ZzYyXx9876",
+      "created_at": "2026-09-26T23:59:59.000Z",
+      "author_id": "783214",
+      "lang": "qme",
+      "attachments": { "media_keys": ["7_1971234567000000003"] },
+      "public_metrics": { "retweet_count": 0, "reply_count": 0, "like_count": 0, "quote_count": 0 }
+    }
+  ],
+  "includes": {
+    "users": [
+      {
+        "id": "2244994945",
+        "name": "X Developers",
+        "username": "XDevelopers",
+        "profile_image_url": "https://pbs.twimg.com/profile_images/1683325380441128960/yRsRRjGO_normal.jpg",
+        "public_metrics": { "followers_count": 570842, "following_count": 2048, "post_count": 14052, "listed_count": 1672 }
+      },
+      {
+        "id": "783214",
+        "name": "X",
+        "username": "X",
+        "profile_image_url": "https://pbs.twimg.com/profile_images/1683899100922511378/5lY42eHs_normal.jpg",
+        "public_metrics": { "followers_count": 67900000, "following_count": 0, "post_count": 15000, "listed_count": 90000 }
+      }
+    ],
+    "media": [
+      {
+        "media_key": "7_1971234567000000001",
+        "type": "video",
+        "duration_ms": 46947,
+        "preview_image_url": "https://pbs.twimg.com/ext_tw_video_thumb/1971234567000000001/pu/img/preview.jpg",
+        "public_metrics": { "view_count": 6909260 }
+      },
+      {
+        "media_key": "3_1971234567000000002",
+        "type": "photo"
+      },
+      {
+        "media_key": "7_1971234567000000003",
+        "type": "video",
+        "duration_ms": 125000,
+        "preview_image_url": "https://pbs.twimg.com/ext_tw_video_thumb/1971234567000000003/pu/img/preview.jpg",
+        "public_metrics": { "view_count": 10 }
+      }
+    ]
+  },
+  "meta": {
+    "newest_id": "1971234567890123458",
+    "oldest_id": "1971234567890123456",
+    "result_count": 3,
+    "next_token": "b26v89c19zqg8o3fr5xwzgc6jwdjvvwxt3t3sz2r3ubwd"
+  }
+}

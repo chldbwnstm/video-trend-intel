@@ -1,0 +1,27 @@
+{
+  "data": {
+    "videos": [
+      {
+        "id": "7690330500263969490",
+        "create_time": 1790544600,
+        "username": "beauty_seoul",
+        "region_code": "KR",
+        "video_description": "선크림 추천",
+        "like_count": 0,
+        "comment_count": 0,
+        "share_count": 0,
+        "view_count": 0,
+        "hashtag_names": ["선크림"],
+        "video_duration": 15
+      }
+    ],
+    "cursor": 101,
+    "search_id": "7201388525814961198",
+    "has_more": false
+  },
+  "error": {
+    "code": "ok",
+    "message": "",
+    "log_id": "20230113024658F0D7C5D6CA3A9B79C5B9"
+  }
+}

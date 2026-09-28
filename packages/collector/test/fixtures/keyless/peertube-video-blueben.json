@@ -1,0 +1,193 @@
+{
+ "id": 42058,
+ "uuid": "b6c56473-3e4d-426b-b646-97e9582ca9fa",
+ "shortUUID": "oz2i41fXzwuhEnN2EBVLk5",
+ "url": "https://tube.blueben.net/videos/watch/b6c56473-3e4d-426b-b646-97e9582ca9fa",
+ "name": "한국인 공예가 둘이서 작정하고 만든 럭셔리 하이엔드 씹덕 마스크",
+ "category": {
+  "id": null,
+  "label": "Unknown"
+ },
+ "licence": {
+  "id": null,
+  "label": "Unknown"
+ },
+ "language": {
+  "id": "ko",
+  "label": "Korean"
+ },
+ "privacy": {
+  "id": 1,
+  "label": "Public"
+ },
+ "nsfw": false,
+ "truncatedDescription": "#만들기 \n\n📩hahnsatelier@gmail.com\n🌿Instagram: @hahns_atelier",
+ "description": "#만들기 \n\n📩hahnsatelier@gmail.com\n🌿Instagram: @hahns_atelier",
+ "isLocal": true,
+ "duration": 563,
+ "aspectRatio": 1.7778,
+ "views": 0,
+ "viewers": 0,
+ "likes": 0,
+ "dislikes": 0,
+ "thumbnailPath": "/lazy-static/thumbnails/c0234f1f-d49d-4b22-b0a6-2d0a8e417e4f.jpg",
+ "previewPath": "/lazy-static/previews/af5a811b-d801-45f6-832e-da1e5bfccb59.jpg",
+ "embedPath": "/videos/embed/oz2i41fXzwuhEnN2EBVLk5",
+ "createdAt": "2026-09-11T10:34:26.594Z",
+ "updatedAt": "2026-09-11T10:37:55.779Z",
+ "publishedAt": "2026-09-11T10:37:55.779Z",
+ "originallyPublishedAt": "2026-09-11T00:00:00.000Z",
+ "isLive": false,
+ "account": {
+  "url": "https://tube.blueben.net/accounts/fashion_style",
+  "name": "fashion_style",
+  "host": "tube.blueben.net",
+  "avatars": [
+   {
+    "width": 48,
+    "path": "/lazy-static/avatars/333ef5f9-89e7-48e0-8935-4d45daa50950.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/333ef5f9-89e7-48e0-8935-4d45daa50950.jpg",
+    "createdAt": "2025-07-28T13:29:09.548Z",
+    "updatedAt": "2025-07-28T13:29:09.548Z"
+   },
+   {
+    "width": 120,
+    "path": "/lazy-static/avatars/6b751a0e-aee4-47ad-9fb6-5a0d6b6f63f2.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/6b751a0e-aee4-47ad-9fb6-5a0d6b6f63f2.jpg",
+    "createdAt": "2025-07-28T13:29:09.545Z",
+    "updatedAt": "2025-07-28T13:29:09.545Z"
+   },
+   {
+    "width": 600,
+    "path": "/lazy-static/avatars/22dd7ae9-61d8-401b-bcec-0c8652f3099d.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/22dd7ae9-61d8-401b-bcec-0c8652f3099d.jpg",
+    "createdAt": "2025-07-28T13:29:09.542Z",
+    "updatedAt": "2025-07-28T13:29:09.542Z"
+   },
+   {
+    "width": 1500,
+    "path": "/lazy-static/avatars/8e1f072b-3413-4503-a5ec-aa894d0f7cfb.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/8e1f072b-3413-4503-a5ec-aa894d0f7cfb.jpg",
+    "createdAt": "2025-07-28T13:29:09.537Z",
+    "updatedAt": "2025-07-28T13:29:09.537Z"
+   }
+  ],
+  "id": 5720,
+  "hostRedundancyAllowed": false,
+  "followingCount": 0,
+  "followersCount": 16,
+  "createdAt": "2025-06-19T22:57:15.651Z",
+  "displayName": "Fashion & Style",
+  "description": "“A showcase of authentic expression through handmade fashion. From crafted leathers to textured textiles, this channel celebrates the artistry behind what we wear. Discover curated looks, behind-the-scenes techniques, and style rooted in craftsmanship—where each piece tells a story of skill, material, and identity.”",
+  "updatedAt": "2025-06-20T11:14:43.092Z",
+  "userId": 10
+ },
+ "channel": {
+  "url": "https://tube.blueben.net/video-channels/hahnsatelier",
+  "name": "hahnsatelier",
+  "host": "tube.blueben.net",
+  "avatars": [
+   {
+    "width": 48,
+    "path": "/lazy-static/avatars/60822fea-5cad-44b9-adbc-27aec6a4076f.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/60822fea-5cad-44b9-adbc-27aec6a4076f.jpg",
+    "createdAt": "2025-06-23T20:17:39.112Z",
+    "updatedAt": "2025-06-23T20:17:39.112Z"
+   },
+   {
+    "width": 120,
+    "path": "/lazy-static/avatars/1a7f815a-a952-48a2-ac22-c7da969bdb50.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/1a7f815a-a952-48a2-ac22-c7da969bdb50.jpg",
+    "createdAt": "2025-06-23T20:17:39.111Z",
+    "updatedAt": "2025-06-23T20:17:39.111Z"
+   },
+   {
+    "width": 600,
+    "path": "/lazy-static/avatars/51df7e8f-0dd1-4a98-b8a5-5b092ee31799.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/51df7e8f-0dd1-4a98-b8a5-5b092ee31799.jpg",
+    "createdAt": "2025-06-23T20:17:39.108Z",
+    "updatedAt": "2025-06-23T20:17:39.108Z"
+   },
+   {
+    "width": 1500,
+    "path": "/lazy-static/avatars/a8a6eab3-8bec-4049-9e85-5dba01706883.jpg",
+    "fileUrl": "https://tube.blueben.net/lazy-static/avatars/a8a6eab3-8bec-4049-9e85-5dba01706883.jpg",
+    "createdAt": "2025-06-23T20:17:39.105Z",
+    "updatedAt": "2025-06-23T20:17:39.105Z"
+   }
+  ],
+  "id": 47,
+  "hostRedundancyAllowed": false,
+  "followingCount": 0,
+  "followersCount": 2,
+  "createdAt": "2025-06-23T20:17:38.323Z",
+  "banners": [],
+  "displayName": "HAHNS ATELIER",
+  "description": "Hello, I am Hahn. I create craft content inspired by the beautiful and enjoyable things I discover in everyday life.\n",
+  "support": null,
+  "isLocal": true,
+  "updatedAt": "2025-06-23T20:17:38.326Z",
+  "ownerAccount": {
+   "url": "https://tube.blueben.net/accounts/fashion_style",
+   "name": "fashion_style",
+   "host": "tube.blueben.net",
+   "avatars": [
+    {
+     "width": 48,
+     "path": "/lazy-static/avatars/333ef5f9-89e7-48e0-8935-4d45daa50950.jpg",
+     "fileUrl": "https://tube.blueben.net/lazy-static/avatars/333ef5f9-89e7-48e0-8935-4d45daa50950.jpg",
+     "createdAt": "2025-07-28T13:29:09.548Z",
+     "updatedAt": "2025-07-28T13:29:09.548Z"
+    },
+    {
+     "width": 120,
+     "path": "/lazy-static/avatars/6b751a0e-aee4-47ad-9fb6-5a0d6b6f63f2.jpg",
+     "fileUrl": "https://tube.blueben.net/lazy-static/avatars/6b751a0e-aee4-47ad-9fb6-5a0d6b6f63f2.jpg",
+     "createdAt": "2025-07-28T13:29:09.545Z",
+     "updatedAt": "2025-07-28T13:29:09.545Z"
+    },
+    {
+     "width": 600,
+     "path": "/lazy-static/avatars/22dd7ae9-61d8-401b-bcec-0c8652f3099d.jpg",
+     "fileUrl": "https://tube.blueben.net/lazy-static/avatars/22dd7ae9-61d8-401b-bcec-0c8652f3099d.jpg",
+     "createdAt": "2025-07-28T13:29:09.542Z",
+     "updatedAt": "2025-07-28T13:29:09.542Z"
+    },
+    {
+     "width": 1500,
+     "path": "/lazy-static/avatars/8e1f072b-3413-4503-a5ec-aa894d0f7cfb.jpg",
+     "fileUrl": "https://tube.blueben.net/lazy-static/avatars/8e1f072b-3413-4503-a5ec-aa894d0f7cfb.jpg",
+     "createdAt": "2025-07-28T13:29:09.537Z",
+     "updatedAt": "2025-07-28T13:29:09.537Z"
+    }
+   ],
+   "id": 5720,
+   "hostRedundancyAllowed": false,
+   "followingCount": 0,
+   "followersCount": 16,
+   "createdAt": "2025-06-19T22:57:15.651Z",
+   "displayName": "Fashion & Style",
+   "description": "“A showcase of authentic expression through handmade fashion. From crafted leathers to textured textiles, this channel celebrates the artistry behind what we wear. Discover curated looks, behind-the-scenes techniques, and style rooted in craftsmanship—where each piece tells a story of skill, material, and identity.”",
+   "updatedAt": "2025-06-20T11:14:43.092Z",
+   "userId": 10
+  }
+ },
+ "blacklisted": false,
+ "blacklistedReason": null,
+ "support": null,
+ "tags": [],
+ "commentsEnabled": true,
+ "commentsPolicy": {
+  "id": 1,
+  "label": "Enabled"
+ },
+ "downloadEnabled": true,
+ "waitTranscoding": true,
+ "inputFileUpdatedAt": null,
+ "state": {
+  "id": 1,
+  "label": "Published"
+ },
+ "files": [],
+ "streamingPlaylists": []
+}

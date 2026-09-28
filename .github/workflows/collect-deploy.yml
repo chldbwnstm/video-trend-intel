@@ -1,0 +1,249 @@
+# Collect -> export -> build -> publish to GitHub Pages, every 3 hours.
+#
+# The collector's SQLite store (raw observation history) lives in the GitHub Release "data-store" as
+# store.sqlite.gz (+ store.prev.sqlite.gz, the previous run). Each run restores it, collects, uploads it back
+# (with a corruption guard, see deploy/ci/store-release.sh), exports dataset.json, builds the web app plus the
+# static JSON API and deploys apps/web/dist to https://<owner>.github.io/<repo>/.
+#
+# Triggers
+#   schedule            collect + deploy (odd minute to avoid the top-of-hour rush)
+#   workflow_dispatch   collect + deploy (inputs: skip collection, restrict sources, guard overrides)
+#   push to main        rebuild the site from the stored data only; collects only when no store exists yet
+#
+# Credentialed sources run only when their repository secrets are set (absent secret = adapter disabled).
+# Optional tuning comes from repository variables (Settings > Secrets and variables > Actions > Variables).
+name: Collect & deploy
+
+on:
+  schedule:
+    - cron: '23 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      collect:
+        description: '수집 실행 (끄면 저장된 데이터로 사이트만 다시 빌드)'
+        type: boolean
+        default: true
+      sources:
+        description: '수집할 원천 id, 쉼표 구분 (비우면 활성화된 전체)'
+        type: string
+        default: ''
+      allow_shrink:
+        description: '저장소 축소 가드 해제 (의도한 정리·마이그레이션 때만)'
+        type: boolean
+        default: false
+      allow_empty:
+        description: '저장소 자산을 복원할 수 없을 때 빈 저장소로 시작 (손상 복구용)'
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'deploy/ci/**'
+      - 'deploy/lib/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/collect-deploy.yml'
+
+permissions:
+  contents: write # data-store release (SQLite store asset)
+  pages: write # GitHub Pages deployment
+  id-token: write # OIDC token for actions/deploy-pages
+  actions: write # keep the scheduled workflow enabled
+
+# One run at a time: runs share the release asset. Never cancel a run that is uploading the store.
+concurrency:
+  group: collect-deploy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  STORE_TAG: data-store
+  STORE_DB: data/store.sqlite
+
+jobs:
+  build:
+    name: Collect and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    outputs:
+      collect_outcome: ${{ steps.collect.outcome }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # node:sqlite (collector store) needs Node >= 22.13; '22' resolves to the latest 22.x.
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore SQLite store (release data-store)
+        id: restore
+        env:
+          STORE_ALLOW_EMPTY: ${{ inputs.allow_empty && '1' || '0' }}
+        run: bash deploy/ci/store-release.sh restore
+
+      - name: Plan
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          RESTORED: ${{ steps.restore.outputs.restored }}
+          INPUT_COLLECT: ${{ inputs.collect }}
+        run: |
+          collect=true
+          if [ "$RESTORED" = "true" ]; then
+            if [ "$EVENT" = "push" ]; then collect=false; fi
+            if [ "$EVENT" = "workflow_dispatch" ] && [ "$INPUT_COLLECT" = "false" ]; then collect=false; fi
+          fi
+          echo "collect=$collect" >>"$GITHUB_OUTPUT"
+          echo "event=$EVENT restored=$RESTORED -> collect=$collect"
+
+      - name: Collect
+        id: collect
+        if: steps.plan.outputs.collect == 'true'
+        # A total collection failure still records the failed runs (shown on /coverage): keep going, save the
+        # store, deploy, and fail the workflow at the end.
+        continue-on-error: true
+        timeout-minutes: 45
+        env:
+          INPUT_SOURCES: ${{ inputs.sources }}
+          COLLECT_SOURCES: ${{ vars.COLLECT_SOURCES }}
+          COLLECT_MAX_REQUESTS: ${{ vars.COLLECT_MAX_REQUESTS }}
+          # Credentials (repository secrets). Empty = adapter disabled.
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_BUSINESS_USERNAMES: ${{ secrets.IG_BUSINESS_USERNAMES || vars.IG_BUSINESS_USERNAMES }}
+          IG_HASHTAGS: ${{ secrets.IG_HASHTAGS || vars.IG_HASHTAGS }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          TWITCH_USER_TOKEN: ${{ secrets.TWITCH_USER_TOKEN }}
+          # Optional tuning (repository variables). Empty = adapter default.
+          YOUTUBE_SEARCHES_PER_RUN: ${{ vars.YOUTUBE_SEARCHES_PER_RUN }}
+          YOUTUBE_REGION_CODE: ${{ vars.YOUTUBE_REGION_CODE }}
+          TIKTOK_REGION_CODES: ${{ vars.TIKTOK_REGION_CODES }}
+          TIKTOK_LOOKBACK_DAYS: ${{ vars.TIKTOK_LOOKBACK_DAYS }}
+          TIKTOK_QUERIES_PER_RUN: ${{ vars.TIKTOK_QUERIES_PER_RUN }}
+          TIKTOK_PAGES_PER_QUERY: ${{ vars.TIKTOK_PAGES_PER_QUERY }}
+          IG_MEDIA_PAGES: ${{ vars.IG_MEDIA_PAGES }}
+          IG_GRAPH_API_VERSION: ${{ vars.IG_GRAPH_API_VERSION }}
+          X_QUERIES_PER_RUN: ${{ vars.X_QUERIES_PER_RUN }}
+          X_PAGES_PER_QUERY: ${{ vars.X_PAGES_PER_QUERY }}
+          X_MAX_RESULTS: ${{ vars.X_MAX_RESULTS }}
+          X_SORT_ORDER: ${{ vars.X_SORT_ORDER }}
+          X_FIELDS_PARAM: ${{ vars.X_FIELDS_PARAM }}
+          TWITCH_LANGUAGE: ${{ vars.TWITCH_LANGUAGE }}
+          TWITCH_TOP_GAMES: ${{ vars.TWITCH_TOP_GAMES }}
+          TWITCH_CLIP_PAGES: ${{ vars.TWITCH_CLIP_PAGES }}
+          TWITCH_CLIP_DAYS: ${{ vars.TWITCH_CLIP_DAYS }}
+          TWITCH_MAX_FOLLOWER_LOOKUPS: ${{ vars.TWITCH_MAX_FOLLOWER_LOOKUPS }}
+        run: |
+          args=(collect)
+          sources="${INPUT_SOURCES:-$COLLECT_SOURCES}"
+          if [ -n "$sources" ]; then args+=(--sources "$sources"); fi
+          if [ -n "$COLLECT_MAX_REQUESTS" ]; then args+=(--max-requests "$COLLECT_MAX_REQUESTS"); fi
+          # shell: bash runs with -o pipefail, so the collector's exit code survives the tee.
+          npx tsx packages/collector/src/cli.ts "${args[@]}" | tee "$RUNNER_TEMP/collect.txt"
+
+      - name: Save SQLite store (release data-store)
+        id: save
+        if: steps.collect.outcome == 'success' || steps.collect.outcome == 'failure'
+        env:
+          STORE_ALLOW_SHRINK: ${{ inputs.allow_shrink && '1' || '0' }}
+        run: bash deploy/ci/store-release.sh save
+
+      - name: Export dataset
+        env:
+          EXPORT_BUDGET_MB: ${{ vars.EXPORT_BUDGET_MB }}
+        run: |
+          args=(export --copy-to-web)
+          if [ -n "$EXPORT_BUDGET_MB" ]; then args+=(--budget-mb "$EXPORT_BUDGET_MB"); fi
+          npx tsx packages/collector/src/cli.ts "${args[@]}"
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Generate static API
+        run: |
+          if [ -f data/export/dataset.json ]; then
+            npx tsx apps/server/src/static-api.ts --dataset data/export/dataset.json --out apps/web/dist/api/v1
+          else
+            echo "::warning title=static API::data/export/dataset.json missing; the site ships without api/v1"
+          fi
+
+      - name: Finalize site
+        run: node deploy/lib/finalize-site.mjs
+
+      - name: Run summary
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          COLLECT_OUTCOME: ${{ steps.collect.outcome }}
+          RESTORE_SOURCE: ${{ steps.restore.outputs.source }}
+        run: |
+          {
+            echo "### Collection"
+            echo "- Event: $EVENT · store restored from: ${RESTORE_SOURCE:-none} · collect: ${COLLECT_OUTCOME:-skipped}"
+            if [ -f "$RUNNER_TEMP/collect.txt" ]; then
+              echo '```'
+              cat "$RUNNER_TEMP/collect.txt"
+              echo '```'
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload collector logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collector-logs-${{ github.run_id }}
+          path: data/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/web/dist
+
+      # Scheduled workflows of public repositories are disabled after 60 days without repository activity.
+      - name: Keep the schedule enabled
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        run: gh api -X PUT "repos/$GH_REPO/actions/workflows/collect-deploy.yml/enable" --silent
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Report collection failure
+        if: needs.build.outputs.collect_outcome == 'failure'
+        run: |
+          echo "::error title=collect::The collector failed (every enabled source failed or the step timed out). The site was deployed from the stored data; see the 'Collect' step and the collector-logs artifact."
+          exit 1

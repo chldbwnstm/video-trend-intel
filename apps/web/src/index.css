@@ -1,0 +1,270 @@
+@import 'tailwindcss';
+
+/*
+ * Theme tokens. Components use the Tailwind utilities mapped below (bg-surface, text-fg-2, border-line...)
+ * or `var(--token)` directly. Never hard-code colors in components: dark mode swaps these tokens.
+ *
+ * Theme resolution: <html data-theme="light|dark"> is set before first paint (index.html) from the saved
+ * preference (light / dark / system). The prefers-color-scheme block is a fallback when no data-theme
+ * attribute is present (e.g. the inline script failed).
+ */
+:root {
+  color-scheme: light;
+  --canvas: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --surface-3: #eef0f4;
+  --line: #e3e6eb;
+  --line-strong: #cdd2da;
+  --fg: #0f1729;
+  --fg-2: #444d63;
+  --fg-3: #636b7a;
+  --accent: #2a63d4;
+  --accent-hover: #2152b5;
+  --accent-soft: #e8effc;
+  --accent-text: #1d4fb8;
+  --on-accent: #ffffff;
+  --focus: #2a63d4;
+  --positive: #0a7a30;
+  --positive-soft: #e5f4ea;
+  --negative: #c42b2b;
+  --negative-soft: #fdecec;
+  --warning: #8f5b00;
+  --warning-soft: #fff3d6;
+  --info: #1d4fb8;
+  --info-soft: #e8effc;
+  --sample: #7a4a00;
+  --sample-bg: #ffe8a8;
+  --sample-line: #e6b43c;
+  --sidebar: #0f1a2e;
+  --sidebar-2: #16233d;
+  --sidebar-active: #22335a;
+  --sidebar-fg: #c3cde0;
+  --sidebar-fg-strong: #ffffff;
+  --sidebar-line: #22314f;
+  --overlay: rgb(15 23 41 / 0.45);
+  --shadow: 0 1px 2px rgb(15 23 41 / 0.06), 0 1px 3px rgb(15 23 41 / 0.04);
+  --shadow-lg: 0 10px 30px rgb(15 23 41 / 0.18);
+
+  /* Charts (dataviz reference palette, validated for light surface #ffffff). */
+  --chart-grid: #e7e8ec;
+  --chart-axis: #c3c6ce;
+  --chart-text: #6b7080;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+
+  /* Platform identity colors (brand-neutral: fixed categorical slots, always shown with a text label). */
+  --platform-youtube: var(--series-1);
+  --platform-dailymotion: var(--series-2);
+  --platform-peertube: var(--series-3);
+  --platform-niconico: var(--series-4);
+  --platform-tiktok: var(--series-5);
+  --platform-instagram: var(--series-6);
+  --platform-x: var(--series-7);
+  --platform-twitch: var(--series-8);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+    --canvas: #0e1116;
+    --surface: #161a21;
+    --surface-2: #1b2029;
+    --surface-3: #242b36;
+    --line: #2a313d;
+    --line-strong: #3a4352;
+    --fg: #e8ebf1;
+    --fg-2: #b8c0ce;
+    --fg-3: #8e97a7;
+    --accent: #5b8def;
+    --accent-hover: #7aa3f2;
+    --accent-soft: #1c2a45;
+    --accent-text: #93b4f6;
+    --on-accent: #0b1220;
+    --focus: #7aa3f2;
+    --positive: #4cc777;
+    --positive-soft: #133222;
+    --negative: #f27b7b;
+    --negative-soft: #3a1a1c;
+    --warning: #eab553;
+    --warning-soft: #3a2c10;
+    --info: #93b4f6;
+    --info-soft: #1c2a45;
+    --sample: #ffd98a;
+    --sample-bg: #4a3505;
+    --sample-line: #8a6515;
+    --sidebar: #0b1120;
+    --sidebar-2: #111a2e;
+    --sidebar-active: #1d2b4a;
+    --sidebar-fg: #b3bfd6;
+    --sidebar-fg-strong: #ffffff;
+    --sidebar-line: #1b2640;
+    --overlay: rgb(0 0 0 / 0.6);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
+    --chart-grid: #2a2f38;
+    --chart-axis: #3b414c;
+    --chart-text: #9aa1ae;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #0e1116;
+  --surface: #161a21;
+  --surface-2: #1b2029;
+  --surface-3: #242b36;
+  --line: #2a313d;
+  --line-strong: #3a4352;
+  --fg: #e8ebf1;
+  --fg-2: #b8c0ce;
+  --fg-3: #8e97a7;
+  --accent: #5b8def;
+  --accent-hover: #7aa3f2;
+  --accent-soft: #1c2a45;
+  --accent-text: #93b4f6;
+  --on-accent: #0b1220;
+  --focus: #7aa3f2;
+  --positive: #4cc777;
+  --positive-soft: #133222;
+  --negative: #f27b7b;
+  --negative-soft: #3a1a1c;
+  --warning: #eab553;
+  --warning-soft: #3a2c10;
+  --info: #93b4f6;
+  --info-soft: #1c2a45;
+  --sample: #ffd98a;
+  --sample-bg: #4a3505;
+  --sample-line: #8a6515;
+  --sidebar: #0b1120;
+  --sidebar-2: #111a2e;
+  --sidebar-active: #1d2b4a;
+  --sidebar-fg: #b3bfd6;
+  --sidebar-fg-strong: #ffffff;
+  --sidebar-line: #1b2640;
+  --overlay: rgb(0 0 0 / 0.6);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.55);
+  --chart-grid: #2a2f38;
+  --chart-axis: #3b414c;
+  --chart-text: #9aa1ae;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+}
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  --font-sans:
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, 'Apple SD Gothic Neo',
+    'Noto Sans KR', 'Malgun Gothic', 'Segoe UI', sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-on-accent: var(--on-accent);
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-negative: var(--negative);
+  --color-negative-soft: var(--negative-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-sample: var(--sample);
+  --color-sample-bg: var(--sample-bg);
+  --color-sample-line: var(--sample-line);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-2: var(--sidebar-2);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-fg: var(--sidebar-fg);
+  --color-sidebar-fg-strong: var(--sidebar-fg-strong);
+  --color-sidebar-line: var(--sidebar-line);
+  --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-lg);
+}
+
+/* Visible keyboard focus for any interactive element that opts in via `focus-ring`. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  a {
+    color: inherit;
+  }
+  ::selection {
+    background: var(--accent-soft);
+  }
+}
+
+@layer components {
+  /* Long lists inside cards: thin scrollbars that follow the theme. */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

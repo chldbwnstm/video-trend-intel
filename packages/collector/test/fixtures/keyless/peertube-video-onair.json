@@ -1,0 +1,248 @@
+{
+ "id": 192,
+ "uuid": "1cb8a74d-19c7-469e-8d1c-ecddaa2feb0e",
+ "shortUUID": "4xGRRXbfotzVfB6Z3f8xvG",
+ "url": "https://onair.sbs/videos/watch/1cb8a74d-19c7-469e-8d1c-ecddaa2feb0e",
+ "name": "명일방주 PA-6",
+ "category": {
+  "id": 7,
+  "label": "Gaming"
+ },
+ "licence": {
+  "id": null,
+  "label": "Unknown"
+ },
+ "language": {
+  "id": "ko",
+  "label": "Korean"
+ },
+ "privacy": {
+  "id": 1,
+  "label": "Public"
+ },
+ "nsfw": false,
+ "nsfwFlags": 0,
+ "nsfwSummary": null,
+ "truncatedDescription": null,
+ "description": null,
+ "isLocal": true,
+ "duration": 104,
+ "aspectRatio": 1.7778,
+ "views": 1,
+ "viewers": 0,
+ "downloads": 36,
+ "likes": 0,
+ "dislikes": 0,
+ "thumbnailPath": "/lazy-static/thumbnails/5b2d7539-cfbc-4990-aeb5-21d4574f844d.png",
+ "previewPath": "/lazy-static/thumbnails/53093d3c-9fb1-4582-931a-569a7137a0fc.png",
+ "thumbnails": [
+  {
+   "height": 157,
+   "width": 280,
+   "aspectRatio": "16:9",
+   "fileUrl": "https://onair.sbs/lazy-static/thumbnails/5b2d7539-cfbc-4990-aeb5-21d4574f844d.png"
+  },
+  {
+   "height": 480,
+   "width": 850,
+   "aspectRatio": "16:9",
+   "fileUrl": "https://onair.sbs/lazy-static/thumbnails/e82d1f57-74c5-4a65-9c48-f86deba6280e.png"
+  },
+  {
+   "height": 720,
+   "width": 1280,
+   "aspectRatio": "16:9",
+   "fileUrl": "https://onair.sbs/lazy-static/thumbnails/a3f04b0d-9b74-403b-bdbb-9e5a29d90e80.png"
+  },
+  {
+   "height": 1400,
+   "width": 1400,
+   "aspectRatio": "1:1",
+   "fileUrl": "https://onair.sbs/lazy-static/thumbnails/726c6f91-abeb-4a25-b6f3-3ea0faa27a56.png"
+  },
+  {
+   "height": 1080,
+   "width": 1920,
+   "aspectRatio": "16:9",
+   "fileUrl": "https://onair.sbs/lazy-static/thumbnails/53093d3c-9fb1-4582-931a-569a7137a0fc.png"
+  }
+ ],
+ "embedPath": "/videos/embed/4xGRRXbfotzVfB6Z3f8xvG",
+ "createdAt": "2026-09-19T14:01:07.756Z",
+ "updatedAt": "2026-09-28T02:47:16.260Z",
+ "publishedAt": "2026-09-19T14:02:07.080Z",
+ "originallyPublishedAt": null,
+ "isLive": false,
+ "account": {
+  "url": "https://onair.sbs/accounts/vallisneria",
+  "name": "vallisneria",
+  "host": "onair.sbs",
+  "avatars": [
+   {
+    "height": 48,
+    "width": 48,
+    "path": "/lazy-static/avatars/97376640-6a7a-4599-9d49-0e309c27c10d.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/97376640-6a7a-4599-9d49-0e309c27c10d.png",
+    "createdAt": "2024-09-07T13:07:46.586Z",
+    "updatedAt": "2024-09-07T13:07:46.586Z"
+   },
+   {
+    "height": 120,
+    "width": 120,
+    "path": "/lazy-static/avatars/54730946-b884-4a23-8ceb-ece7b3023b9e.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/54730946-b884-4a23-8ceb-ece7b3023b9e.png",
+    "createdAt": "2024-09-07T13:07:46.586Z",
+    "updatedAt": "2024-09-07T13:07:46.586Z"
+   },
+   {
+    "height": 600,
+    "width": 600,
+    "path": "/lazy-static/avatars/f70e9005-5ab7-4f3b-aea7-6888594f7a65.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/f70e9005-5ab7-4f3b-aea7-6888594f7a65.png",
+    "createdAt": "2024-09-07T13:07:46.584Z",
+    "updatedAt": "2024-09-07T13:07:46.584Z"
+   },
+   {
+    "height": 1500,
+    "width": 1500,
+    "path": "/lazy-static/avatars/e33d91e4-6deb-4dda-969b-328a58489355.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/e33d91e4-6deb-4dda-969b-328a58489355.png",
+    "createdAt": "2024-09-07T13:07:46.583Z",
+    "updatedAt": "2024-09-07T13:07:46.583Z"
+   }
+  ],
+  "id": 85329,
+  "hostRedundancyAllowed": false,
+  "followingCount": 0,
+  "followersCount": 2,
+  "createdAt": "2024-09-07T03:15:15.899Z",
+  "displayName": "발리스네리아",
+  "description": null,
+  "updatedAt": "2024-09-07T03:15:15.952Z",
+  "userId": 7
+ },
+ "channel": {
+  "url": "https://onair.sbs/video-channels/neria_arknights",
+  "name": "neria_arknights",
+  "host": "onair.sbs",
+  "avatars": [
+   {
+    "height": 48,
+    "width": 48,
+    "path": "/lazy-static/avatars/a7d98a7d-746c-4ac4-aa44-68035097df5e.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/a7d98a7d-746c-4ac4-aa44-68035097df5e.png",
+    "createdAt": "2026-09-19T14:11:15.754Z",
+    "updatedAt": "2026-09-19T14:11:15.754Z"
+   },
+   {
+    "height": 120,
+    "width": 120,
+    "path": "/lazy-static/avatars/38f26a7e-8c2d-41c6-a42c-4d6d7af4e2b0.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/38f26a7e-8c2d-41c6-a42c-4d6d7af4e2b0.png",
+    "createdAt": "2026-09-19T14:11:15.752Z",
+    "updatedAt": "2026-09-19T14:11:15.752Z"
+   },
+   {
+    "height": 600,
+    "width": 600,
+    "path": "/lazy-static/avatars/c704f150-d83e-4c9b-a878-ff123060bbe9.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/c704f150-d83e-4c9b-a878-ff123060bbe9.png",
+    "createdAt": "2026-09-19T14:11:15.750Z",
+    "updatedAt": "2026-09-19T14:11:15.750Z"
+   },
+   {
+    "height": 1500,
+    "width": 1500,
+    "path": "/lazy-static/avatars/2c71ffc8-5cf4-4db4-8c2a-d78cb8b65df9.png",
+    "fileUrl": "https://onair.sbs/lazy-static/avatars/2c71ffc8-5cf4-4db4-8c2a-d78cb8b65df9.png",
+    "createdAt": "2026-09-19T14:11:15.713Z",
+    "updatedAt": "2026-09-19T14:11:15.713Z"
+   }
+  ],
+  "id": 10,
+  "hostRedundancyAllowed": false,
+  "followingCount": 0,
+  "followersCount": 0,
+  "createdAt": "2024-09-07T14:51:25.434Z",
+  "banners": [],
+  "displayName": "명일방주",
+  "description": "@vallisneria@onair.sbs 의 명일방주 영상",
+  "support": null,
+  "isLocal": true,
+  "updatedAt": "2026-09-19T14:01:08.180Z",
+  "ownerAccount": {
+   "url": "https://onair.sbs/accounts/vallisneria",
+   "name": "vallisneria",
+   "host": "onair.sbs",
+   "avatars": [
+    {
+     "height": 48,
+     "width": 48,
+     "path": "/lazy-static/avatars/97376640-6a7a-4599-9d49-0e309c27c10d.png",
+     "fileUrl": "https://onair.sbs/lazy-static/avatars/97376640-6a7a-4599-9d49-0e309c27c10d.png",
+     "createdAt": "2024-09-07T13:07:46.586Z",
+     "updatedAt": "2024-09-07T13:07:46.586Z"
+    },
+    {
+     "height": 120,
+     "width": 120,
+     "path": "/lazy-static/avatars/54730946-b884-4a23-8ceb-ece7b3023b9e.png",
+     "fileUrl": "https://onair.sbs/lazy-static/avatars/54730946-b884-4a23-8ceb-ece7b3023b9e.png",
+     "createdAt": "2024-09-07T13:07:46.586Z",
+     "updatedAt": "2024-09-07T13:07:46.586Z"
+    },
+    {
+     "height": 600,
+     "width": 600,
+     "path": "/lazy-static/avatars/f70e9005-5ab7-4f3b-aea7-6888594f7a65.png",
+     "fileUrl": "https://onair.sbs/lazy-static/avatars/f70e9005-5ab7-4f3b-aea7-6888594f7a65.png",
+     "createdAt": "2024-09-07T13:07:46.584Z",
+     "updatedAt": "2024-09-07T13:07:46.584Z"
+    },
+    {
+     "height": 1500,
+     "width": 1500,
+     "path": "/lazy-static/avatars/e33d91e4-6deb-4dda-969b-328a58489355.png",
+     "fileUrl": "https://onair.sbs/lazy-static/avatars/e33d91e4-6deb-4dda-969b-328a58489355.png",
+     "createdAt": "2024-09-07T13:07:46.583Z",
+     "updatedAt": "2024-09-07T13:07:46.583Z"
+    }
+   ],
+   "id": 85329,
+   "hostRedundancyAllowed": false,
+   "followingCount": 0,
+   "followersCount": 2,
+   "createdAt": "2024-09-07T03:15:15.899Z",
+   "displayName": "발리스네리아",
+   "description": null,
+   "updatedAt": "2024-09-07T03:15:15.952Z",
+   "userId": 7
+  }
+ },
+ "comments": 0,
+ "blacklisted": false,
+ "blacklistedReason": null,
+ "liveSchedules": [],
+ "support": null,
+ "tags": [
+  "Arknightgs",
+  "명일방주"
+ ],
+ "commentsPolicy": {
+  "id": 1,
+  "label": "Enabled"
+ },
+ "downloadEnabled": true,
+ "waitTranscoding": true,
+ "inputFileUpdatedAt": null,
+ "state": {
+  "id": 1,
+  "label": "Published"
+ },
+ "embedPrivacyPolicy": {
+  "id": 1,
+  "label": "All allowed"
+ },
+ "files": [],
+ "streamingPlaylists": []
+}

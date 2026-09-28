@@ -1,0 +1,142 @@
+[
+  {
+    "id": "ytn",
+    "name": "YTN",
+    "accountIds": [
+      "youtube:UChlgI3UHCOnwUGzWzbJ3H5w",
+      "dailymotion:x1jj4j6"
+    ],
+    "note": "Verified 2026-09-28. Dailymotion 'YTN news' (x1jj4j6, verified partner) has username 'ytnnews24', the same string as the YouTube handle @ytnnews24, and website_url ytn.co.kr; YouTube video descriptions give @ytn.co.kr contacts. Both accounts uploaded on 2026-09-28."
+  },
+  {
+    "id": "channel-a",
+    "name": "채널A",
+    "accountIds": [
+      "youtube:UCfq4V1DAuaojnr2ryvWNysw",
+      "youtube:UCIIpmDPVk7nzNHEUSHmvkUg",
+      "youtube:UCaZS_XwAu1yBMNoQDD1mR7g",
+      "dailymotion:x1vltbi",
+      "dailymotion:x1vltcb",
+      "dailymotion:x1vltfg",
+      "dailymotion:x1sakmv",
+      "dailymotion:x1vltew"
+    ],
+    "note": "Verified 2026-09-28. Organization-level portfolio. YouTube @channelA-news, @channelA-newstop10 and @play-channelA all link to ichannela.com in their channel header. Dailymotion '채널A News' (x1vltbi, website ichannela.com/news) and '채널A Home' (x1sakmv, website ichannela.com) are verified partners. '채널A 뉴스TOP10' (x1vltcb), 'Entertainment' (x1vltfg) and 'Life' (x1vltew) are verified partners with the same naming, created within about 10 minutes of x1vltbi on 2016-10-20. The YouTube and Dailymotion news and TOP10 accounts carry the same program brands. All 5 Dailymotion accounts uploaded on 2026-09-28."
+  },
+  {
+    "id": "tv-chosun",
+    "name": "TV조선",
+    "accountIds": [
+      "youtube:UCWlV3Lz_55UaX4JsMj-z__Q",
+      "youtube:UCuw1hxBo5mDVUhgMzRDk3aw",
+      "dailymotion:x1xs6hs",
+      "dailymotion:x1tfwms"
+    ],
+    "note": "Verified 2026-09-28. The Dailymotion usernames are the same strings as the YouTube handles: 'tvchosunnews' = @tvchosunnews, described as 'TV조선 뉴스 공식 YouTube'; 'tvchosun' = @tvchosun, described as 'Official YouTube channel for TV CHOSUN' and linking to tvchosun.com. Both Dailymotion accounts are verified partners. Dailymotion x1tfwms last uploaded on 2023-04-14. x1xs6hs reports 11862 videos but lists none publicly."
+  },
+  {
+    "id": "mbn",
+    "name": "MBN",
+    "accountIds": [
+      "youtube:UCG9aFJTZ-lMCHAiO1KJsirg",
+      "youtube:UCYyLIlOJyqkAFKlVjzX5img",
+      "dailymotion:x2a4tdd",
+      "dailymotion:x2a59h6"
+    ],
+    "note": "Verified 2026-09-28. YouTube @mbn ('MBN News') links to mbn.co.kr. Dailymotion 'MBN News' (x2a4tdd, website mbn.mk.co.kr) and 'MBN Entertainment' (x2a59h6, website mbn.co.kr, described as the official MBN program channel) are verified partners. YouTube @MBN_Entertainment carries the same 'MBN Entertainment' name. Latest Dailymotion uploads: 2023-05-30 (News) and 2025-06-05 (Entertainment)."
+  },
+  {
+    "id": "yonhapnews-tv",
+    "name": "연합뉴스TV",
+    "accountIds": [
+      "youtube:UCTHCOPwqNfZ0uiKOvFyhGwg",
+      "dailymotion:x24nxdn"
+    ],
+    "note": "Verified 2026-09-28. YouTube @yonhapnewstv23 and Dailymotion '연합뉴스TV' (x24nxdn, username yonhapnewstv, verified partner) both link to yonhapnewstv.co.kr. The latest Dailymotion upload is from 2024-07-24."
+  },
+  {
+    "id": "mnet",
+    "name": "Mnet (CJ ENM)",
+    "accountIds": [
+      "youtube:UCbD8EppRX3ZwJSou-TVo90A",
+      "youtube:UCTQVIXvcHrR9jYoJ6qaBAow",
+      "dailymotion:x1wclj7",
+      "dailymotion:x1x4ox2"
+    ],
+    "note": "Verified 2026-09-28. Dailymotion 'Mnet' (x1wclj7, username Mnet, verified partner) describes itself as the official Mnet channel, credits CJ ENM and has website mnet.com. It matches YouTube @Mnet ('Mnet K-POP'). Dailymotion 'M2' (x1x4ox2, username mnetm2, verified partner) matches YouTube @MnetM2. Both Dailymotion accounts last uploaded on 2021-12-09."
+  },
+  {
+    "id": "jyp-entertainment",
+    "name": "JYP Entertainment",
+    "accountIds": [
+      "youtube:UCaO6TYtlC8U5ttz62hTrZgg",
+      "dailymotion:x1wmaiu"
+    ],
+    "note": "Verified 2026-09-28. Dailymotion 'JYP Nation' (x1wmaiu, verified partner) has username 'JYPEntertainment', the same string as the YouTube handle @JYPEntertainment, whose header links to jype.com. The latest Dailymotion upload is from 2019-05-19."
+  },
+  {
+    "id": "blackpink",
+    "name": "BLACKPINK",
+    "accountIds": [
+      "youtube:UCOmHUn--16B90oW2L6FRR3A",
+      "dailymotion:x29nezz"
+    ],
+    "note": "Verified 2026-09-28. Evidence is medium: Dailymotion 'BLACKPINK' (x29nezz, verified partner, username 'blackpink') and YouTube @BLACKPINK share the name and upload the official music videos. The Dailymotion account has 11 videos, the latest 'BLACKPINK - Shut Down' from 2022-09-23. Its account country is US."
+  },
+  {
+    "id": "dingo-music",
+    "name": "딩고 뮤직 / dingo music",
+    "accountIds": [
+      "youtube:UCtCiO5t2voB14CmZKTkIzPQ",
+      "dailymotion:x1wddnv"
+    ],
+    "note": "Verified 2026-09-28. Evidence is medium: Dailymotion 'Dingo Music' (x1wddnv, verified partner, username 'Dingomusic') matches YouTube @DingoMusic. The latest Dailymotion upload is from 2017-08-02 (a ZICO reality show episode)."
+  },
+  {
+    "id": "arirang-tv",
+    "name": "Arirang TV",
+    "accountIds": [
+      "youtube:UCzznO4xSV8BKnUBPyswtCUw",
+      "youtube:UC_6zPf4uuteHFFctnQtEaXQ",
+      "dailymotion:x1e92j6",
+      "dailymotion:x1ljnuc"
+    ],
+    "note": "Verified 2026-09-28. Organization-level portfolio. YouTube @ArirangCoKrArirangNEWS links to arirang.com and lists @arirangworld ('ARIRANG K-POP') as a sibling channel. Dailymotion 'Arirang News' (x1e92j6) and 'Arirang K-Pop' (x1ljnuc) are verified partners whose websites are on arirang.com. The Dailymotion 'Arirang News' description links to a different YouTube channel, 'Arirang News Center' (UCJ8W_bYaSq5Q6oV49Tjv9pw), whose feed had no entries, so the link is at organization level only. Latest Dailymotion uploads: 2021-01-03 (News) and 2023-04-21 (K-Pop)."
+  },
+  {
+    "id": "joongang-ilbo",
+    "name": "중앙일보",
+    "accountIds": [
+      "youtube:UCH3mJ-nHxjjny2FJbJaqiDA",
+      "dailymotion:x2dgn6c"
+    ],
+    "note": "Verified 2026-09-28. Evidence is medium: Dailymotion '중앙일보' (x2dgn6c, username joongangilbo, verified partner, website joongang.joins.com) and YouTube @JoongAngIlbo ('중앙일보') share the same newspaper brand. The latest Dailymotion upload is from 2025-10-08."
+  },
+  {
+    "id": "topstarnews",
+    "name": "톱스타뉴스",
+    "accountIds": [
+      "youtube:UClOg34aPlf3GWZZ6ojt0WYQ",
+      "dailymotion:x1w3nmy"
+    ],
+    "note": "Verified 2026-09-28. YouTube @topstarnewsofficial ('topstarnews(톱스타뉴스)') links to topstarnews.net. Dailymotion '톱스타뉴스' (x1w3nmy, username topstarnews, verified partner) is the largest uploader in Dailymotion KR results. The latest Dailymotion upload is from 2026-09-22."
+  },
+  {
+    "id": "mbc-sports-plus",
+    "name": "MBC SPORTS+",
+    "accountIds": [
+      "youtube:UCMkrtzkegsLZJ1s6H7S0eKw",
+      "dailymotion:x29fhbw"
+    ],
+    "note": "Verified 2026-09-28. Evidence is medium: Dailymotion 'MBC Sports+' (x29fhbw, username mbcsportsplus, verified partner, website mbcsportsplus.com) matches YouTube @MBCsportsplus ('MBC Sports+'). The latest Dailymotion upload is from 2021-11-23."
+  },
+  {
+    "id": "all-the-kpop",
+    "name": "ALL THE K-POP (MBC PLUS)",
+    "accountIds": [
+      "youtube:UCPde4guD9yFBRzkxk2PatoA",
+      "dailymotion:x1u0ca6"
+    ],
+    "note": "Verified 2026-09-28. Evidence is medium: Dailymotion 'ALL THE K-POP' (x1u0ca6, username allthekpop, verified partner, website mbcplus.com/allthekpop) matches YouTube @ALLTHEKPOP ('ALL THE K-POP'). The latest Dailymotion upload is from 2023-02-02."
+  }
+]

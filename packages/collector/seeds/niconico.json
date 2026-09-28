@@ -1,0 +1,186 @@
+[
+  {
+    "q": "ゲーム",
+    "targets": "tagsExact",
+    "category": "gaming",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "ゲーム",
+    "targets": "tagsExact",
+    "category": "gaming",
+    "sort": "-startTime",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "実況プレイ動画",
+    "targets": "tagsExact",
+    "category": "gaming",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "音楽",
+    "targets": "tagsExact",
+    "category": "music",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "VOCALOID",
+    "targets": "tagsExact",
+    "category": "music",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "VOCALOID",
+    "targets": "tagsExact",
+    "category": "music",
+    "sort": "-startTime",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "歌ってみた",
+    "targets": "tagsExact",
+    "category": "music",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "踊ってみた",
+    "targets": "tagsExact",
+    "category": "music",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "アニメ",
+    "targets": "tagsExact",
+    "category": "film_animation",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "料理",
+    "targets": "tagsExact",
+    "category": "food",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "旅行",
+    "targets": "tagsExact",
+    "category": "travel",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "車載動画",
+    "targets": "tagsExact",
+    "category": "autos",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "動物",
+    "targets": "tagsExact",
+    "category": "pets_animals",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "科学",
+    "targets": "tagsExact",
+    "category": "science_tech",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "ニコニコ技術部",
+    "targets": "tagsExact",
+    "category": "science_tech",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "作ってみた",
+    "targets": "tagsExact",
+    "category": "howto_diy",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "歴史",
+    "targets": "tagsExact",
+    "category": "education",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "ゆっくり解説",
+    "targets": "tagsExact",
+    "category": "education",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "政治",
+    "targets": "tagsExact",
+    "category": "news_politics",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "スポーツ",
+    "targets": "tagsExact",
+    "category": "sports",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "エンターテイメント",
+    "targets": "tagsExact",
+    "category": "entertainment",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "ソフトウェアトーク劇場",
+    "targets": "tagsExact",
+    "category": "comedy",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  },
+  {
+    "q": "Vtuber",
+    "targets": "tagsExact",
+    "category": "entertainment",
+    "sort": "-viewCounter",
+    "sinceDays": 30,
+    "limit": 100
+  }
+]

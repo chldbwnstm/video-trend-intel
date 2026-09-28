@@ -1,0 +1,562 @@
+[
+  {
+    "channel": "news",
+    "country": "kr",
+    "language": "ko",
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "news",
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tv",
+    "country": "kr",
+    "language": "ko",
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tv",
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "fun",
+    "country": "kr",
+    "language": "ko",
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "fun",
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "sport",
+    "country": "kr",
+    "language": "ko",
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "sport",
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "정치",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "경제",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "사건",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "건강",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "야구",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "축구",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "골프",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "부동산",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "주식",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "여행",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "예능",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "드라마",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "아이돌",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "트로트",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "게임",
+    "limit": 100
+  },
+  {
+    "channel": null,
+    "country": "kr",
+    "language": "ko",
+    "sort": "recent",
+    "search": "먹방",
+    "limit": 100
+  },
+  {
+    "channel": "news",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tv",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "fun",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "sport",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "music",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "people",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "videogames",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "lifestyle",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "kids",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "animals",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "auto",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tech",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "travel",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "school",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "shortfilms",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "creation",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-week",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "news",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tv",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "fun",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "sport",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "music",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "people",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "videogames",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "lifestyle",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "kids",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "animals",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "auto",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tech",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "travel",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "school",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "shortfilms",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "creation",
+    "country": "kr",
+    "language": "ko",
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "news",
+    "country": null,
+    "language": null,
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tv",
+    "country": null,
+    "language": null,
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "fun",
+    "country": null,
+    "language": null,
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "lifestyle",
+    "country": null,
+    "language": null,
+    "sort": "trending",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "news",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "music",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "fun",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "videogames",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "sport",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "tv",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "people",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "animals",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "kids",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  },
+  {
+    "channel": "lifestyle",
+    "country": null,
+    "language": null,
+    "sort": "visited-today",
+    "search": null,
+    "limit": 100
+  }
+]

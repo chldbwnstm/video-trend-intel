@@ -1,0 +1,40 @@
+{
+  "data": [
+    {
+      "id": "17999123450000001",
+      "caption": "오늘의 커피 #coffee",
+      "media_type": "VIDEO",
+      "comments_count": 7,
+      "like_count": 420,
+      "permalink": "https://www.instagram.com/reel/DBtopMedia01/",
+      "timestamp": "2026-09-27T05:00:00+0000",
+      "media_url": "https://scontent.cdninstagram.com/o1/v/video_17999123450000001.mp4"
+    },
+    {
+      "id": "17858843269216389",
+      "caption": "새 시즌 원두 소개\n#coffee #커피",
+      "media_type": "VIDEO",
+      "comments_count": 50,
+      "like_count": 5837,
+      "permalink": "https://www.instagram.com/reel/DAbCdEfGhIj/",
+      "timestamp": "2026-09-25T09:10:00+0000",
+      "media_url": "https://scontent.cdninstagram.com/o1/v/video_17858843269216389.mp4"
+    },
+    {
+      "id": "17999123450000002",
+      "caption": "사진 #coffee",
+      "media_type": "IMAGE",
+      "comments_count": 1,
+      "like_count": 30,
+      "permalink": "https://www.instagram.com/p/DBtopMedia02/",
+      "timestamp": "2026-09-27T06:00:00+0000",
+      "media_url": "https://scontent.cdninstagram.com/v/img_17999123450000002.jpg"
+    }
+  ],
+  "paging": {
+    "cursors": {
+      "after": "NTAyYmFjY2NmNGQ3ZTA0YmJmYmNhNzEyYjFlM2Y1ZDY"
+    },
+    "next": "https://graph.facebook.com/v26.0/17843857450040591/top_media?user_id=17841405309211844&fields=id&limit=50&after=NTAyYmFjY2NmNGQ3ZTA0YmJmYmNhNzEyYjFlM2Y1ZDY"
+  }
+}

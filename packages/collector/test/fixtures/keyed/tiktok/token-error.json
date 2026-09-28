@@ -1,0 +1,5 @@
+{
+  "error": "invalid_request",
+  "error_description": "Client secret is missed in request.",
+  "log_id": "202206221854370101130062072500FFA2"
+}

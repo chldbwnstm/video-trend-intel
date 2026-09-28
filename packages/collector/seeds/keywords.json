@@ -1,0 +1,757 @@
+[
+  {
+    "keyword": "메이크업",
+    "category": "beauty",
+    "language": "ko"
+  },
+  {
+    "keyword": "올리브영 추천",
+    "category": "beauty",
+    "language": "ko"
+  },
+  {
+    "keyword": "쿠션 파운데이션",
+    "category": "beauty",
+    "language": "ko"
+  },
+  {
+    "keyword": "퍼스널컬러",
+    "category": "beauty",
+    "language": "ko"
+  },
+  {
+    "keyword": "스킨케어",
+    "category": "beauty/skincare",
+    "language": "ko"
+  },
+  {
+    "keyword": "선크림 추천",
+    "category": "beauty/skincare",
+    "language": "ko"
+  },
+  {
+    "keyword": "화장품 성분",
+    "category": "beauty/skincare",
+    "language": "ko"
+  },
+  {
+    "keyword": "데일리룩",
+    "category": "fashion",
+    "language": "ko"
+  },
+  {
+    "keyword": "코디 추천",
+    "category": "fashion",
+    "language": "ko"
+  },
+  {
+    "keyword": "남자 코디",
+    "category": "fashion",
+    "language": "ko"
+  },
+  {
+    "keyword": "무신사 추천",
+    "category": "fashion",
+    "language": "ko"
+  },
+  {
+    "keyword": "패션 하울",
+    "category": "fashion",
+    "language": "ko"
+  },
+  {
+    "keyword": "레시피",
+    "category": "food",
+    "language": "ko"
+  },
+  {
+    "keyword": "맛집 추천",
+    "category": "food",
+    "language": "ko"
+  },
+  {
+    "keyword": "편의점 신상",
+    "category": "food",
+    "language": "ko"
+  },
+  {
+    "keyword": "다이어트 식단",
+    "category": "food",
+    "language": "ko"
+  },
+  {
+    "keyword": "먹방",
+    "category": "food/mukbang",
+    "language": "ko"
+  },
+  {
+    "keyword": "대식가 먹방",
+    "category": "food/mukbang",
+    "language": "ko"
+  },
+  {
+    "keyword": "자취요리",
+    "category": "food/cooking",
+    "language": "ko"
+  },
+  {
+    "keyword": "집밥 레시피",
+    "category": "food/cooking",
+    "language": "ko"
+  },
+  {
+    "keyword": "게임 신작",
+    "category": "gaming",
+    "language": "ko"
+  },
+  {
+    "keyword": "리그 오브 레전드",
+    "category": "gaming",
+    "language": "ko"
+  },
+  {
+    "keyword": "발로란트",
+    "category": "gaming",
+    "language": "ko"
+  },
+  {
+    "keyword": "배틀그라운드",
+    "category": "gaming",
+    "language": "ko"
+  },
+  {
+    "keyword": "메이플스토리",
+    "category": "gaming",
+    "language": "ko"
+  },
+  {
+    "keyword": "마인크래프트",
+    "category": "gaming",
+    "language": "ko"
+  },
+  {
+    "keyword": "닌텐도 스위치",
+    "category": "gaming",
+    "language": "ko"
+  },
+  {
+    "keyword": "모바일 게임 추천",
+    "category": "gaming/mobile",
+    "language": "ko"
+  },
+  {
+    "keyword": "LCK",
+    "category": "gaming/esports",
+    "language": "ko"
+  },
+  {
+    "keyword": "e스포츠",
+    "category": "gaming/esports",
+    "language": "ko"
+  },
+  {
+    "keyword": "음악방송",
+    "category": "music",
+    "language": "ko"
+  },
+  {
+    "keyword": "플레이리스트",
+    "category": "music",
+    "language": "ko"
+  },
+  {
+    "keyword": "노래 커버",
+    "category": "music",
+    "language": "ko"
+  },
+  {
+    "keyword": "라이브 무대",
+    "category": "music",
+    "language": "ko"
+  },
+  {
+    "keyword": "트로트",
+    "category": "music",
+    "language": "ko"
+  },
+  {
+    "keyword": "케이팝",
+    "category": "music/kpop",
+    "language": "ko"
+  },
+  {
+    "keyword": "아이돌 직캠",
+    "category": "music/kpop",
+    "language": "ko"
+  },
+  {
+    "keyword": "뮤직비디오",
+    "category": "music/kpop",
+    "language": "ko"
+  },
+  {
+    "keyword": "커버댄스",
+    "category": "music/kpop",
+    "language": "ko"
+  },
+  {
+    "keyword": "예능",
+    "category": "entertainment",
+    "language": "ko"
+  },
+  {
+    "keyword": "웹예능",
+    "category": "entertainment",
+    "language": "ko"
+  },
+  {
+    "keyword": "토크쇼",
+    "category": "entertainment",
+    "language": "ko"
+  },
+  {
+    "keyword": "연애 리얼리티",
+    "category": "entertainment",
+    "language": "ko"
+  },
+  {
+    "keyword": "아이돌 예능",
+    "category": "entertainment",
+    "language": "ko"
+  },
+  {
+    "keyword": "코미디",
+    "category": "comedy",
+    "language": "ko"
+  },
+  {
+    "keyword": "콩트",
+    "category": "comedy",
+    "language": "ko"
+  },
+  {
+    "keyword": "개그",
+    "category": "comedy",
+    "language": "ko"
+  },
+  {
+    "keyword": "웃긴 영상",
+    "category": "comedy",
+    "language": "ko"
+  },
+  {
+    "keyword": "영화 리뷰",
+    "category": "film_animation",
+    "language": "ko"
+  },
+  {
+    "keyword": "드라마 리뷰",
+    "category": "film_animation",
+    "language": "ko"
+  },
+  {
+    "keyword": "결말 포함",
+    "category": "film_animation",
+    "language": "ko"
+  },
+  {
+    "keyword": "넷플릭스 추천",
+    "category": "film_animation",
+    "language": "ko"
+  },
+  {
+    "keyword": "애니메이션",
+    "category": "film_animation",
+    "language": "ko"
+  },
+  {
+    "keyword": "뉴스",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "속보",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "정치",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "대통령",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "경제 뉴스",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "날씨",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "사건사고",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "국제 뉴스",
+    "category": "news_politics",
+    "language": "ko"
+  },
+  {
+    "keyword": "야구",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "KBO 하이라이트",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "축구",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "손흥민",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "프리미어리그",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "K리그",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "배구",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "골프",
+    "category": "sports",
+    "language": "ko"
+  },
+  {
+    "keyword": "공부 브이로그",
+    "category": "education",
+    "language": "ko"
+  },
+  {
+    "keyword": "수능",
+    "category": "education",
+    "language": "ko"
+  },
+  {
+    "keyword": "영어 공부",
+    "category": "education",
+    "language": "ko"
+  },
+  {
+    "keyword": "영어 회화",
+    "category": "education",
+    "language": "ko"
+  },
+  {
+    "keyword": "한국사",
+    "category": "education",
+    "language": "ko"
+  },
+  {
+    "keyword": "자기계발",
+    "category": "education",
+    "language": "ko"
+  },
+  {
+    "keyword": "책 추천",
+    "category": "education",
+    "language": "ko"
+  },
+  {
+    "keyword": "아이폰",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "갤럭시",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "언박싱",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "IT 리뷰",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "인공지능",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "AI 활용",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "코딩",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "과학 상식",
+    "category": "science_tech",
+    "language": "ko"
+  },
+  {
+    "keyword": "여행 브이로그",
+    "category": "travel",
+    "language": "ko"
+  },
+  {
+    "keyword": "일본 여행",
+    "category": "travel",
+    "language": "ko"
+  },
+  {
+    "keyword": "해외여행",
+    "category": "travel",
+    "language": "ko"
+  },
+  {
+    "keyword": "제주도 여행",
+    "category": "travel",
+    "language": "ko"
+  },
+  {
+    "keyword": "캠핑",
+    "category": "travel",
+    "language": "ko"
+  },
+  {
+    "keyword": "국내 여행",
+    "category": "travel",
+    "language": "ko"
+  },
+  {
+    "keyword": "브이로그",
+    "category": "lifestyle",
+    "language": "ko"
+  },
+  {
+    "keyword": "일상 브이로그",
+    "category": "lifestyle",
+    "language": "ko"
+  },
+  {
+    "keyword": "인테리어",
+    "category": "lifestyle",
+    "language": "ko"
+  },
+  {
+    "keyword": "살림",
+    "category": "lifestyle",
+    "language": "ko"
+  },
+  {
+    "keyword": "모닝 루틴",
+    "category": "lifestyle",
+    "language": "ko"
+  },
+  {
+    "keyword": "동요",
+    "category": "kids_family",
+    "language": "ko"
+  },
+  {
+    "keyword": "키즈",
+    "category": "kids_family",
+    "language": "ko"
+  },
+  {
+    "keyword": "육아",
+    "category": "kids_family",
+    "language": "ko"
+  },
+  {
+    "keyword": "장난감",
+    "category": "kids_family",
+    "language": "ko"
+  },
+  {
+    "keyword": "육아 브이로그",
+    "category": "kids_family",
+    "language": "ko"
+  },
+  {
+    "keyword": "강아지",
+    "category": "pets_animals",
+    "language": "ko"
+  },
+  {
+    "keyword": "고양이",
+    "category": "pets_animals",
+    "language": "ko"
+  },
+  {
+    "keyword": "반려견 훈련",
+    "category": "pets_animals",
+    "language": "ko"
+  },
+  {
+    "keyword": "반려묘",
+    "category": "pets_animals",
+    "language": "ko"
+  },
+  {
+    "keyword": "동물 영상",
+    "category": "pets_animals",
+    "language": "ko"
+  },
+  {
+    "keyword": "자동차 리뷰",
+    "category": "autos",
+    "language": "ko"
+  },
+  {
+    "keyword": "신차",
+    "category": "autos",
+    "language": "ko"
+  },
+  {
+    "keyword": "전기차",
+    "category": "autos",
+    "language": "ko"
+  },
+  {
+    "keyword": "시승기",
+    "category": "autos",
+    "language": "ko"
+  },
+  {
+    "keyword": "블랙박스",
+    "category": "autos",
+    "language": "ko"
+  },
+  {
+    "keyword": "중고차",
+    "category": "autos",
+    "language": "ko"
+  },
+  {
+    "keyword": "주식",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "미국 주식",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "부동산",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "경제",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "재테크",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "비트코인",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "금리",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "ETF",
+    "category": "business_finance",
+    "language": "ko"
+  },
+  {
+    "keyword": "운동",
+    "category": "health_fitness",
+    "language": "ko"
+  },
+  {
+    "keyword": "홈트",
+    "category": "health_fitness",
+    "language": "ko"
+  },
+  {
+    "keyword": "다이어트",
+    "category": "health_fitness",
+    "language": "ko"
+  },
+  {
+    "keyword": "헬스",
+    "category": "health_fitness",
+    "language": "ko"
+  },
+  {
+    "keyword": "요가",
+    "category": "health_fitness",
+    "language": "ko"
+  },
+  {
+    "keyword": "건강 정보",
+    "category": "health_fitness",
+    "language": "ko"
+  },
+  {
+    "keyword": "DIY",
+    "category": "howto_diy",
+    "language": "ko"
+  },
+  {
+    "keyword": "만들기",
+    "category": "howto_diy",
+    "language": "ko"
+  },
+  {
+    "keyword": "생활 꿀팁",
+    "category": "howto_diy",
+    "language": "ko"
+  },
+  {
+    "keyword": "종이접기",
+    "category": "howto_diy",
+    "language": "ko"
+  },
+  {
+    "keyword": "뜨개질",
+    "category": "howto_diy",
+    "language": "ko"
+  },
+  {
+    "keyword": "셀프 인테리어",
+    "category": "howto_diy",
+    "language": "ko"
+  },
+  {
+    "keyword": "kpop",
+    "category": "music/kpop",
+    "language": "en"
+  },
+  {
+    "keyword": "k-pop dance cover",
+    "category": "music/kpop",
+    "language": "en"
+  },
+  {
+    "keyword": "korean food",
+    "category": "food",
+    "language": "en"
+  },
+  {
+    "keyword": "mukbang",
+    "category": "food/mukbang",
+    "language": "en"
+  },
+  {
+    "keyword": "korean street food",
+    "category": "food",
+    "language": "en"
+  },
+  {
+    "keyword": "k-drama",
+    "category": "film_animation",
+    "language": "en"
+  },
+  {
+    "keyword": "korean skincare",
+    "category": "beauty/skincare",
+    "language": "en"
+  },
+  {
+    "keyword": "seoul travel",
+    "category": "travel",
+    "language": "en"
+  },
+  {
+    "keyword": "korea vlog",
+    "category": "lifestyle",
+    "language": "en"
+  },
+  {
+    "keyword": "learn korean",
+    "category": "education",
+    "language": "en"
+  },
+  {
+    "keyword": "korean variety show",
+    "category": "entertainment",
+    "language": "en"
+  },
+  {
+    "keyword": "lck highlights",
+    "category": "gaming/esports",
+    "language": "en"
+  },
+  {
+    "keyword": "韓国料理",
+    "category": "food",
+    "language": "ja"
+  },
+  {
+    "keyword": "韓国旅行",
+    "category": "travel",
+    "language": "ja"
+  },
+  {
+    "keyword": "韓国コスメ",
+    "category": "beauty",
+    "language": "ja"
+  },
+  {
+    "keyword": "韓国ドラマ",
+    "category": "film_animation",
+    "language": "ja"
+  },
+  {
+    "keyword": "K-POP",
+    "category": "music/kpop",
+    "language": "ja"
+  },
+  {
+    "keyword": "ゲーム実況",
+    "category": "gaming",
+    "language": "ja"
+  },
+  {
+    "keyword": "韓国語",
+    "category": "education",
+    "language": "ja"
+  },
+  {
+    "keyword": "ボカロ",
+    "category": "music",
+    "language": "ja"
+  }
+]

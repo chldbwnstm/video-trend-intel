@@ -1,0 +1,36 @@
+{
+  "name": "video-trend-intel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "기간·플랫폼·분야별 인기 영상 인텔리전스 (Tubular형 멀티 플랫폼 영상 분석 서비스)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "collect": "npm run collect -w @vti/collector",
+    "export": "npm run export -w @vti/collector",
+    "dev": "npm run dev -w @vti/web",
+    "build": "npm run build -w @vti/web",
+    "start": "npm run start -w @vti/server",
+    "collect-and-export": "npm run run -w @vti/collector",
+    "stats": "npm run stats -w @vti/collector",
+    "static-api": "tsx apps/server/src/static-api.ts",
+    "site": "npm run build && npm run static-api && node deploy/lib/finalize-site.mjs",
+    "preview": "npm run preview -w @vti/web",
+    "task:register": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/register-task.ps1",
+    "task:unregister": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy/windows/unregister-task.ps1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

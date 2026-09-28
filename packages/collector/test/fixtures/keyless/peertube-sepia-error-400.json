@@ -1,0 +1,11 @@
+{
+ "errors": {
+  "search": {
+   "type": "field",
+   "value": "",
+   "msg": "Should have a valid search",
+   "path": "search",
+   "location": "query"
+  }
+ }
+}

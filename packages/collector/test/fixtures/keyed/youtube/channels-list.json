@@ -1,0 +1,38 @@
+{
+  "kind": "youtube#channelListResponse",
+  "etag": "c0",
+  "pageInfo": { "totalResults": 2, "resultsPerPage": 2 },
+  "items": [
+    {
+      "kind": "youtube#channel",
+      "etag": "c1",
+      "id": "UCchannelAAAAAAAAAAAAAAA",
+      "snippet": {
+        "title": "채널A 뷰티",
+        "description": "뷰티 채널",
+        "customUrl": "@channela",
+        "publishedAt": "2015-03-01T00:00:00Z",
+        "thumbnails": {
+          "default": { "url": "https://yt3.ggpht.com/channelA=s88", "width": 88, "height": 88 },
+          "medium": { "url": "https://yt3.ggpht.com/channelA=s240", "width": 240, "height": 240 },
+          "high": { "url": "https://yt3.ggpht.com/channelA=s800", "width": 800, "height": 800 }
+        },
+        "localized": { "title": "채널A 뷰티", "description": "뷰티 채널" },
+        "country": "KR"
+      },
+      "statistics": { "viewCount": "123456789", "subscriberCount": "1230000", "hiddenSubscriberCount": false, "videoCount": "512" }
+    },
+    {
+      "kind": "youtube#channel",
+      "etag": "c2",
+      "id": "UCchannelBBBBBBBBBBBBBBB",
+      "snippet": {
+        "title": "채널B",
+        "description": "",
+        "publishedAt": "2020-01-01T00:00:00Z",
+        "thumbnails": { "default": { "url": "https://yt3.ggpht.com/channelB=s88", "width": 88, "height": 88 } }
+      },
+      "statistics": { "viewCount": "5000", "subscriberCount": "0", "hiddenSubscriberCount": true, "videoCount": "10" }
+    }
+  ]
+}

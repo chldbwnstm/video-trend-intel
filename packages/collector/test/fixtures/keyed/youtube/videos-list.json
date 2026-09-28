@@ -1,0 +1,117 @@
+{
+  "kind": "youtube#videoListResponse",
+  "etag": "Bk3JEa9ZFh3uYd4FzEX8ZyCXE9o",
+  "pageInfo": { "totalResults": 5, "resultsPerPage": 5 },
+  "items": [
+    {
+      "kind": "youtube#video",
+      "etag": "v1",
+      "id": "vidLongAAA1",
+      "snippet": {
+        "publishedAt": "2026-09-25T10:00:00Z",
+        "channelId": "UCchannelAAAAAAAAAAAAAAA",
+        "title": "가을 스킨케어 루틴 (민감성 피부)",
+        "description": "환절기 스킨케어 루틴을 소개합니다.\n#스킨케어 #민감성피부",
+        "thumbnails": {
+          "default": { "url": "https://i.ytimg.com/vi/vidLongAAA1/default.jpg", "width": 120, "height": 90 },
+          "medium": { "url": "https://i.ytimg.com/vi/vidLongAAA1/mqdefault.jpg", "width": 320, "height": 180 },
+          "high": { "url": "https://i.ytimg.com/vi/vidLongAAA1/hqdefault.jpg", "width": 480, "height": 360 }
+        },
+        "channelTitle": "채널A",
+        "tags": ["스킨케어", "민감성 피부", "루틴"],
+        "categoryId": "26",
+        "liveBroadcastContent": "none",
+        "defaultLanguage": "ko",
+        "localized": { "title": "가을 스킨케어 루틴 (민감성 피부)", "description": "환절기 스킨케어 루틴을 소개합니다." },
+        "defaultAudioLanguage": "ko"
+      },
+      "contentDetails": {
+        "duration": "PT12M34S",
+        "dimension": "2d",
+        "definition": "hd",
+        "caption": "false",
+        "licensedContent": true,
+        "contentRating": {},
+        "projection": "rectangular"
+      },
+      "statistics": { "viewCount": "154321", "likeCount": "4321", "favoriteCount": "0", "commentCount": "210" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "v2",
+      "id": "vidShortB02",
+      "snippet": {
+        "publishedAt": "2026-09-26T01:30:00Z",
+        "channelId": "UCchannelAAAAAAAAAAAAAAA",
+        "title": "30초 세안법",
+        "description": "",
+        "thumbnails": { "default": { "url": "https://i.ytimg.com/vi/vidShortB02/default.jpg", "width": 120, "height": 90 } },
+        "channelTitle": "채널A",
+        "categoryId": "22",
+        "liveBroadcastContent": "none",
+        "defaultLanguage": "ko-KR"
+      },
+      "contentDetails": { "duration": "PT45S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": false, "contentRating": {}, "projection": "rectangular" },
+      "statistics": { "viewCount": "98000", "favoriteCount": "0", "commentCount": "0" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "v3",
+      "id": "vidLiveCC03",
+      "snippet": {
+        "publishedAt": "2026-09-28T02:00:00Z",
+        "channelId": "UCchannelBBBBBBBBBBBBBBB",
+        "title": "[LIVE] 뷰티 라이브",
+        "description": "라이브 방송",
+        "thumbnails": { "high": { "url": "https://i.ytimg.com/vi/vidLiveCC03/hqdefault_live.jpg", "width": 480, "height": 360 } },
+        "channelTitle": "채널B",
+        "categoryId": "24",
+        "liveBroadcastContent": "live",
+        "defaultAudioLanguage": "zxx"
+      },
+      "contentDetails": { "duration": "P0D", "dimension": "2d", "definition": "sd", "caption": "false", "licensedContent": false, "contentRating": {}, "projection": "rectangular" },
+      "statistics": { "viewCount": "1500", "likeCount": "120", "favoriteCount": "0" },
+      "liveStreamingDetails": {
+        "actualStartTime": "2026-09-28T02:00:05Z",
+        "scheduledStartTime": "2026-09-28T02:00:00Z",
+        "concurrentViewers": "321",
+        "activeLiveChatId": "Cg0KC3ZpZExpdmVDQzAz"
+      }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "v4",
+      "id": "vidShrt2m04",
+      "snippet": {
+        "publishedAt": "2026-09-27T12:00:00Z",
+        "channelId": "UCchannelBBBBBBBBBBBBBBB",
+        "title": "선크림 비교 #shorts",
+        "description": "",
+        "thumbnails": {},
+        "channelTitle": "채널B",
+        "categoryId": "26",
+        "liveBroadcastContent": "none"
+      },
+      "contentDetails": { "duration": "PT2M10S", "dimension": "2d", "definition": "hd", "caption": "false", "licensedContent": false, "contentRating": {}, "projection": "rectangular" },
+      "statistics": { "viewCount": "0", "likeCount": "0", "favoriteCount": "0", "commentCount": "0" }
+    },
+    {
+      "kind": "youtube#video",
+      "etag": "v5",
+      "id": "vidRefrsh05",
+      "snippet": {
+        "publishedAt": "2026-08-01T09:00:00Z",
+        "channelId": "UCchannelAAAAAAAAAAAAAAA",
+        "title": "지난달 영상",
+        "description": "여름 메이크업",
+        "thumbnails": { "medium": { "url": "https://i.ytimg.com/vi/vidRefrsh05/mqdefault.jpg", "width": 320, "height": 180 } },
+        "channelTitle": "채널A",
+        "categoryId": "26",
+        "liveBroadcastContent": "none",
+        "defaultAudioLanguage": "en-US"
+      },
+      "contentDetails": { "duration": "PT1H2M3S", "dimension": "2d", "definition": "hd", "caption": "true", "licensedContent": true, "contentRating": {}, "projection": "rectangular" },
+      "statistics": { "viewCount": "2000000", "likeCount": "30000", "favoriteCount": "0", "commentCount": "1500" }
+    }
+  ]
+}

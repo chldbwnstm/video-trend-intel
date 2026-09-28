@@ -1,0 +1,51 @@
+{
+  "data": {
+    "videos": [
+      {
+        "id": "7689012374800827090",
+        "create_time": 1790237700,
+        "username": "beauty_seoul",
+        "region_code": "KR",
+        "video_description": "민감성 피부 스킨케어 루틴 #스킨케어 #skincare",
+        "music_id": "7689012374800800000",
+        "like_count": 12500,
+        "comment_count": 340,
+        "share_count": 0,
+        "view_count": 250000,
+        "hashtag_names": ["스킨케어", "SkinCare"],
+        "video_duration": 42
+      },
+      {
+        "id": "7689812527208071890",
+        "create_time": 1790424000,
+        "username": "cook_kim",
+        "region_code": "KR",
+        "video_description": "5분 자취 요리\n간단 레시피",
+        "comment_count": 12,
+        "share_count": 5,
+        "view_count": 8800,
+        "hashtag_names": [],
+        "video_duration": 305
+      },
+      {
+        "hashtag_names": ["avengers", "pov"],
+        "region_code": "CA",
+        "create_time": 1633823999,
+        "effect_ids": ["0"],
+        "video_id": 702874395068494965,
+        "music_id": 703847506349838790,
+        "video_description": "lol #pov #avengers",
+        "view_count": 1050,
+        "comment_count": 2
+      }
+    ],
+    "cursor": 100,
+    "search_id": "7201388525814961198",
+    "has_more": true
+  },
+  "error": {
+    "code": "ok",
+    "message": "",
+    "log_id": "20230113024658F0D7C5D6CA3A9B79C5B9"
+  }
+}

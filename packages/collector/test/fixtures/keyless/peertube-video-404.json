@@ -1,0 +1,7 @@
+{
+ "type": "about:blank",
+ "title": "Not Found",
+ "detail": "Video not found",
+ "status": 404,
+ "docs": "https://docs.joinpeertube.org/api-rest-reference.html#operation/getVideo"
+}

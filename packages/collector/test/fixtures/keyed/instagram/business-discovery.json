@@ -1,0 +1,66 @@
+{
+  "business_discovery": {
+    "id": "17841401441775531",
+    "username": "bluebottle",
+    "name": "Blue Bottle Coffee",
+    "profile_picture_url": "https://scontent.cdninstagram.com/v/bluebottle_profile.jpg",
+    "followers_count": 267788,
+    "media_count": 1205,
+    "media": {
+      "data": [
+        {
+          "id": "17858843269216389",
+          "caption": "새 시즌 원두 소개\n#coffee #커피",
+          "media_type": "VIDEO",
+          "media_product_type": "REELS",
+          "comments_count": 50,
+          "like_count": 5837,
+          "view_count": 7757,
+          "timestamp": "2026-09-25T09:10:00+0000",
+          "permalink": "https://www.instagram.com/reel/DAbCdEfGhIj/",
+          "thumbnail_url": "https://scontent.cdninstagram.com/v/thumb_17858843269216389.jpg",
+          "media_url": "https://scontent.cdninstagram.com/o1/v/video_17858843269216389.mp4"
+        },
+        {
+          "id": "17894036119131554",
+          "caption": "라떼 아트 연습",
+          "media_type": "VIDEO",
+          "media_product_type": "REELS",
+          "comments_count": 11,
+          "timestamp": "2026-09-24T02:00:00+0000",
+          "permalink": "https://www.instagram.com/reel/DAkLmNoPqRs/",
+          "thumbnail_url": "https://scontent.cdninstagram.com/v/thumb_17894036119131554.jpg",
+          "media_url": "https://scontent.cdninstagram.com/o1/v/video_17894036119131554.mp4"
+        },
+        {
+          "id": "17894449363137701",
+          "caption": "카페 사진",
+          "media_type": "IMAGE",
+          "media_product_type": "FEED",
+          "comments_count": 28,
+          "like_count": 3643,
+          "timestamp": "2026-09-23T02:00:00+0000",
+          "permalink": "https://www.instagram.com/p/DAtUvWxYz01/",
+          "media_url": "https://scontent.cdninstagram.com/v/img_17894449363137701.jpg"
+        },
+        {
+          "id": "17844278716241265",
+          "caption": "앨범",
+          "media_type": "CAROUSEL_ALBUM",
+          "media_product_type": "FEED",
+          "comments_count": 43,
+          "like_count": 4943,
+          "timestamp": "2026-09-22T02:00:00+0000",
+          "permalink": "https://www.instagram.com/p/DA2345678ab/"
+        }
+      ],
+      "paging": {
+        "cursors": {
+          "before": "QVFIUkRGbXhKdUZA0VXl0c3JGR0dqYnlfR3dSbk9ab2pZAMWNaMHNwX2FuRlJ3",
+          "after": "QVFIUmRWN3BTVjZAqdXpfRVFrcV9nYWZAYaGR1b1JfV0VoR2JzN0E3WlhhdVFR"
+        }
+      }
+    }
+  },
+  "id": "17841405309211844"
+}

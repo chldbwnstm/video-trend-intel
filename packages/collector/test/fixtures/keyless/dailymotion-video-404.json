@@ -1,0 +1,8 @@
+{
+ "error": {
+  "more_info": "https://developer.dailymotion.com/api#error-codes",
+  "code": 404,
+  "message": "This video does not exist or has been deleted.",
+  "type": "not_found"
+ }
+}

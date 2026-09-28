@@ -1,0 +1,29 @@
+# Video Trend Intel: API + web on http://localhost:8787, collector every 3 hours.
+#
+#   docker compose up -d --build
+#   docker compose logs -f vti
+#
+# ./data is shared with the host (the same data/store.sqlite and data/export the collector CLI uses).
+# Optional .env (see SPEC.md "Sources"): YOUTUBE_API_KEY, TIKTOK_CLIENT_KEY/SECRET, IG_ACCESS_TOKEN/IG_USER_ID,
+# X_BEARER_TOKEN, TWITCH_CLIENT_ID/SECRET, COLLECT_INTERVAL_MIN, RATE_LIMIT_PER_MIN, TRUST_PROXY, ...
+# Explicit project name: the repository folder name is not ASCII, so Compose cannot derive one from it.
+name: video-trend-intel
+
+services:
+  vti:
+    build: .
+    image: video-trend-intel:local
+    ports:
+      - "${VTI_PORT:-8787}:8787"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Fixed inside the container (the host port is VTI_PORT above).
+      PORT: "8787"
+      HOST: 0.0.0.0
+      DATA_DIR: /app/data
+    restart: unless-stopped
+    stop_grace_period: 15s

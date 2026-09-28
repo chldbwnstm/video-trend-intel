@@ -1,0 +1,95 @@
+[
+  {
+    "search": null,
+    "languageOneOf": [
+      "ko"
+    ],
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  },
+  {
+    "search": null,
+    "languageOneOf": [
+      "ko"
+    ],
+    "sort": "-views",
+    "limit": 100,
+    "sinceDays": 30
+  },
+  {
+    "search": null,
+    "languageOneOf": [
+      "en"
+    ],
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  },
+  {
+    "search": null,
+    "languageOneOf": [
+      "en"
+    ],
+    "sort": "-views",
+    "limit": 100,
+    "sinceDays": 30
+  },
+  {
+    "search": null,
+    "languageOneOf": [
+      "ja"
+    ],
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  },
+  {
+    "search": null,
+    "languageOneOf": [
+      "fr"
+    ],
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  },
+  {
+    "search": null,
+    "languageOneOf": [
+      "fr"
+    ],
+    "sort": "-views",
+    "limit": 100,
+    "sinceDays": 30
+  },
+  {
+    "search": "한국",
+    "languageOneOf": null,
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  },
+  {
+    "search": "korea",
+    "languageOneOf": null,
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  },
+  {
+    "search": "K-pop",
+    "languageOneOf": null,
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  },
+  {
+    "search": "science",
+    "languageOneOf": [
+      "en"
+    ],
+    "sort": "-publishedAt",
+    "limit": 100,
+    "sinceDays": null
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "name": "@vti/collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "collect": "tsx src/cli.ts collect",
+    "export": "tsx src/cli.ts export --copy-to-web",
+    "run": "tsx src/cli.ts run",
+    "stats": "tsx src/cli.ts stats",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vti/core": "*",
+    "fast-xml-parser": "^5.11.1"
+  }
+}

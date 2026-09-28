@@ -1,0 +1,25 @@
+# Build context for the Dockerfile: sources + manifests only.
+**/node_modules
+**/dist
+.git
+.github
+.debate-of-agents
+.claude
+
+# Runtime data lives in the /app/data volume (store, exports, logs) — never baked into the image.
+data
+*.log
+data-run*.log
+
+# Secrets are passed at runtime (env_file / -e), never copied into an image layer.
+.env
+.env.*
+!.env.example
+
+# Local tooling / reports
+coverage
+test-results
+playwright-report
+.DS_Store
+**/*.tmp
+**/*.tmp.ts
