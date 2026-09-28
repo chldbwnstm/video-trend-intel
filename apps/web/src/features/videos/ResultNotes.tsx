@@ -8,11 +8,11 @@ import { Link } from 'react-router-dom';
 import type { AgeDays, DateMode, MetricStatus } from '@vti/core';
 import { Database, Info, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/index.ts';
-import { useTz } from '../../data/hooks.ts';
-import { fmtTime } from '../../lib/display.ts';
+import { useOptionalDataset, useTz } from '../../data/hooks.ts';
+import { collectionStartText, sourceShortLabel } from '../../lib/collection.ts';
+import type { CollectionTimeline } from '../../lib/collection.ts';
 import { formatInteger } from '../../lib/format.ts';
-import { STATUS_META } from '../../lib/metricStatus.ts';
-import { tzShort } from '../../lib/timezones.ts';
+import { statusCountLabel } from '../../lib/metricStatus.ts';
 import { cx } from '../../lib/cx.ts';
 import type { DataCoverage, StatusSummary } from './model.ts';
 
@@ -31,13 +31,9 @@ export function unavailableShare(s: StatusSummary): string {
 
 const BREAKDOWN_ORDER: MetricStatus[] = ['exact', 'interpolated', 'source_reported', 'lower_bound', 'decrease_flagged', 'unavailable'];
 
-/** `정확 3,918 · ≥ 하한값 557 · 원천 원천 제공값 …` parts, in a fixed order, only non-zero. */
+/** `관측값 3,918 · ≥ 하한값 557 · 원천 제공값 12 …` parts, in a fixed order, only non-zero. */
 export function breakdownParts(summary: StatusSummary): { status: MetricStatus; text: string }[] {
-  return BREAKDOWN_ORDER.filter((s) => summary.counts[s]).map((s) => {
-    const meta = STATUS_META[s];
-    const marker = meta.marker && s !== 'source_reported' ? `${meta.marker} ` : '';
-    return { status: s, text: `${marker}${meta.label} ${formatInteger(summary.counts[s] ?? 0)}` };
-  });
+  return BREAKDOWN_ORDER.filter((s) => summary.counts[s]).map((s) => ({ status: s, text: `${statusCountLabel(s)} ${formatInteger(summary.counts[s] ?? 0)}` }));
 }
 
 export function StatusBreakdown({ label, summary, className }: { label: string; summary: StatusSummary; className?: string }) {
@@ -98,7 +94,8 @@ export interface CoverageCalloutProps {
   /** Label of the primary metric, e.g. `기간 조회 증가`. */
   label: string;
   summary: StatusSummary;
-  collectionStart: number | null;
+  /** The shared collection timeline (lib/collection.ts); null when unknown. */
+  timeline: CollectionTimeline | null;
   /** Rolling preset active (source-reported windows can apply). */
   rolling: boolean;
   onUseUpload?: () => void;
@@ -118,11 +115,15 @@ function coverageLink() {
  * Explains why the ranked metric is missing for many videos, in plain terms, with the next step. Rendered
  * for `none` (nothing computable) and `partial` (>= 20% unavailable); nothing for `ok` / `empty`.
  */
-export function CoverageCallout({ coverage, mode, age, label, summary, collectionStart, rolling, onUseUpload, onUseRolling }: CoverageCalloutProps) {
+export function CoverageCallout({ coverage, mode, age, label, summary, timeline, rolling, onUseUpload, onUseRolling }: CoverageCalloutProps) {
   const tz = useTz();
+  const coverageList = useOptionalDataset()?.dataset.coverage;
   if (coverage !== 'none' && coverage !== 'partial') return null;
-  const since = collectionStart !== null ? `${fmtTime(collectionStart, tz)} ${tzShort(tz)}` : null;
-  const sinceText = since ? `관측은 ${since}부터 쌓이기 시작했고 약 3시간마다 추가됨.` : '관측이 쌓이는 중임.';
+  // Same wording as the trends / ratings readiness callouts (lib/collection.ts).
+  const sinceText =
+    timeline && timeline.collectionStartAt !== null
+      ? `${collectionStartText(timeline, tz, (s) => sourceShortLabel(coverageList, s))}. 관측은 약 3시간마다 추가됨.`
+      : '관측이 쌓이는 중임.';
   const lower = summary.counts.lower_bound ?? 0;
   // Nearly nothing computable (first days of collection): treat like `none` for emphasis and next steps.
   const severe = coverage === 'none' || summary.unavailable / Math.max(1, summary.total) >= SEVERE_SHARE;

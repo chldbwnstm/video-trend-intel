@@ -2,12 +2,14 @@
 /**
  * Inspect (and optionally checkpoint) the collector's SQLite store. OWNER: deploy.
  *
- *   node deploy/lib/store-inspect.mjs <store.sqlite> [--checkpoint] [--require-ok] [--env]
+ *   node deploy/lib/store-inspect.mjs <store.sqlite> [--checkpoint] [--require-ok] [--env] [--vacuum-into <copy.sqlite>]
  *
  * --checkpoint  fold the WAL into the main file (PRAGMA wal_checkpoint(TRUNCATE)) before measuring, so the
  *               single .sqlite file is complete and safe to copy / gzip.
  * --require-ok  exit 1 when the file is missing, is not a SQLite database or fails PRAGMA quick_check.
  * --env         print KEY=VALUE lines (for shell scripts) instead of one JSON object.
+ * --vacuum-into write a compacted copy of the store to <copy.sqlite> (VACUUM INTO; the file must not exist) after
+ *               the checks; exit 1 when that fails. CI uploads this copy (free pages are not shipped).
  *
  * Reports: bytes, quick_check result, schema user_version and row counts of the append-only tables
  * (videos, observations, accounts, runs) plus the latest run time. Never creates a missing file.
@@ -17,12 +19,16 @@ import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const USAGE = 'usage: node deploy/lib/store-inspect.mjs <store.sqlite> [--checkpoint] [--require-ok] [--env]';
+const USAGE = 'usage: node deploy/lib/store-inspect.mjs <store.sqlite> [--checkpoint] [--require-ok] [--env] [--vacuum-into <copy.sqlite>]';
 
 function parse(argv) {
-  const opts = { path: null, checkpoint: false, requireOk: false, env: false };
-  for (const a of argv) {
-    if (a === '--checkpoint') opts.checkpoint = true;
+  const opts = { path: null, checkpoint: false, requireOk: false, env: false, vacuumInto: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--vacuum-into') {
+      opts.vacuumInto = argv[++i];
+      if (!opts.vacuumInto) throw new Error('--vacuum-into needs a path');
+    } else if (a === '--checkpoint') opts.checkpoint = true;
     else if (a === '--require-ok') opts.requireOk = true;
     else if (a === '--env') opts.env = true;
     else if (a === '-h' || a === '--help') return null;
@@ -43,7 +49,7 @@ function count(db, table) {
   }
 }
 
-function inspect(path, checkpoint) {
+function inspect(path, checkpoint, vacuumInto) {
   const report = {
     path,
     exists: existsSync(path),
@@ -56,6 +62,7 @@ function inspect(path, checkpoint) {
     accounts: null,
     runs: null,
     lastRunAt: null,
+    vacuumedInto: null,
     error: null,
   };
   if (!report.exists) {
@@ -84,6 +91,11 @@ function inspect(path, checkpoint) {
     if (checkpoint) {
       const mode = db.prepare('PRAGMA journal_mode').get();
       if (String(Object.values(mode)[0]).toLowerCase() === 'wal') db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    }
+    if (vacuumInto) {
+      if (existsSync(vacuumInto)) throw new Error(`${vacuumInto} already exists`);
+      db.exec(`VACUUM INTO '${vacuumInto.replace(/'/g, "''")}'`);
+      report.vacuumedInto = vacuumInto;
     }
   } catch (err) {
     report.ok = false;
@@ -127,6 +139,6 @@ if (opts === null) {
   process.stdout.write(`${USAGE}\n`);
   process.exit(0);
 }
-const report = inspect(resolve(opts.path), opts.checkpoint);
+const report = inspect(resolve(opts.path), opts.checkpoint, opts.vacuumInto ? resolve(opts.vacuumInto) : null);
 process.stdout.write(`${opts.env ? toEnv(report) : JSON.stringify(report)}\n`);
-process.exitCode = opts.requireOk && !report.ok ? 1 : 0;
+process.exitCode = (opts.requireOk && !report.ok) || (opts.vacuumInto && !report.vacuumedInto) ? 1 : 0;

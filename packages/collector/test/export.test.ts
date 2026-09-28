@@ -61,32 +61,58 @@ describe('compactSeries', () => {
     for (const p of raw) if (NOW - p.t < 72 * HOUR) expect(kept.has(p.t)).toBe(true);
   });
 
-  it('keeps both neighbours of every Asia/Seoul local-day boundary', () => {
+  it('keeps both neighbours of every Asia/Seoul local-day boundary of the last 14 days, and the last point of each older day', () => {
     let day = localDateOf(first, TZ);
     const lastDay = localDateOf(NOW, TZ);
-    let boundaries = 0;
+    let recent = 0;
+    let older = 0;
     while (day < lastDay) {
       day = addDays(day, 1);
       const b = localDateStartUtc(day, TZ);
       const before = [...raw].reverse().find((p) => p.t < b)!;
       const after = raw.find((p) => p.t >= b)!;
-      expect(kept.has(before.t)).toBe(true);
-      expect(kept.has(after.t)).toBe(true);
-      boundaries++;
+      if (NOW - after.t < 14 * DAY) {
+        expect(kept.has(before.t)).toBe(true);
+        expect(kept.has(after.t)).toBe(true);
+        recent++;
+      } else if (NOW - before.t < 90 * DAY) {
+        expect(kept.has(before.t)).toBe(true); // last point before midnight = the day's point
+        older++;
+      }
     }
-    expect(boundaries).toBeGreaterThan(100);
+    expect(recent).toBeGreaterThanOrEqual(13);
+    expect(older).toBeGreaterThan(70);
   });
 
-  it('values at every local midnight are identical to the raw series (daily windows stay exact)', () => {
+  it('values at every local midnight of the last 14 days are identical to the raw series (daily windows stay exact)', () => {
     const rawVideo = asVideo(raw, first - HOUR);
     const compactVideo = asVideo(compact, first - HOUR);
     let day = localDateOf(first, TZ);
+    let checked = 0;
     for (let i = 0; i < 119; i++) {
       day = addDays(day, 1);
       const b = localDateStartUtc(day, TZ);
+      if (NOW - b >= 14 * DAY - HOUR) continue;
       expect(valueAt(compactVideo, 'views', b)).toEqual(valueAt(rawVideo, 'views', b));
       expect(valueAt(compactVideo, 'likes', b)).toEqual(valueAt(rawVideo, 'likes', b));
+      checked++;
     }
+    expect(checked).toBeGreaterThanOrEqual(13);
+  });
+
+  it('keeps the stated density at every age (8 points per day for 120 days)', () => {
+    const pts: ObservationPoint[] = [];
+    for (let t = NOW - 120 * DAY; t <= NOW; t += 3 * HOUR) pts.push(pt(t, Math.round((t - (NOW - 120 * DAY)) / HOUR)));
+    const c = compactSeries(pts, NOW, TZ);
+    const density = (fromDays: number, toDays: number) => {
+      const inBand = c.filter((p) => NOW - p.t >= fromDays * DAY && NOW - p.t < toDays * DAY);
+      return inBand.length / (toDays - fromDays);
+    };
+    expect(density(0, 3)).toBeCloseTo(8, 0); // everything
+    expect(density(3, 14)).toBeLessThanOrEqual(5.1); // one per 6 h bucket + the first point after midnight
+    expect(density(14, 90)).toBeLessThanOrEqual(1.05); // one per local day
+    expect(density(14, 90)).toBeGreaterThanOrEqual(0.95);
+    expect(density(90, 120)).toBeLessThanOrEqual(1 / 7 + 0.1); // one per local week (+ the first point)
   });
 
   it('respects the per-age density limits', () => {
@@ -102,7 +128,7 @@ describe('compactSeries', () => {
     for (const n of perDay.values()) expect(n).toBeLessThanOrEqual(2);
   });
 
-  it('beyond 90 days keeps only day-boundary neighbours plus one point per local week', () => {
+  it('beyond 90 days keeps one point per local week (no day-boundary neighbours)', () => {
     // three observations per local day (every 8h) between 200 and 91 days ago
     const pts: ObservationPoint[] = [];
     for (let t = NOW - 200 * DAY; t <= NOW - 91 * DAY; t += 8 * HOUR) pts.push(pt(t, Math.round((t - (NOW - 200 * DAY)) / HOUR)));
@@ -111,7 +137,7 @@ describe('compactSeries', () => {
     expect(c[c.length - 1]).toEqual(pts[pts.length - 1]);
     const days = new Set(pts.map((p) => localDateOf(p.t, TZ))).size;
     expect(c.length).toBeLessThan(pts.length);
-    expect(c.length).toBeLessThanOrEqual(2 * days + Math.ceil(days / 7) + 2);
+    expect(c.length).toBeLessThanOrEqual(Math.ceil(days / 7) + 3);
     // the middle observation of a day survives only as its week's last point
     const perDay = new Map<string, number>();
     for (const p of c) perDay.set(localDateOf(p.t, TZ), (perDay.get(localDateOf(p.t, TZ)) ?? 0) + 1);
@@ -142,7 +168,7 @@ describe('compactSeries', () => {
     const syd: ObservationPoint[] = [];
     const s0 = Date.parse('2026-10-01T00:00:00Z');
     for (let t = s0; t < s0 + 7 * DAY; t += HOUR) syd.push(pt(t, (t - s0) / HOUR));
-    const later = s0 + 30 * DAY;
+    const later = s0 + 10 * DAY; // boundary neighbours are kept for the last 14 days
     const c = compactSeries(syd, later, 'Australia/Sydney');
     const keptT = new Set(c.map((p) => p.t));
     const b = localDateStartUtc('2026-10-05', 'Australia/Sydney');
@@ -272,6 +298,60 @@ describe('buildDataset', () => {
     expect(back).toEqual(ds);
   });
 
+  it('under budget pressure keeps every platform\'s newest uploads and prunes each platform by the same share', () => {
+    const s = mem();
+    // YouTube: huge view counts; PeerTube / niconico: tiny ones. New uploads have the fewest views everywhere.
+    const plans: { platform: RawVideo['platform']; old: number; fresh: number; oldViews: number; freshViews: number }[] = [
+      { platform: 'youtube', old: 40, fresh: 10, oldViews: 500_000, freshViews: 5_000 },
+      { platform: 'niconico', old: 40, fresh: 10, oldViews: 800, freshViews: 4 },
+      { platform: 'peertube', old: 40, fresh: 10, oldViews: 60, freshViews: 1 },
+    ];
+    for (const plan of plans) {
+      const a = acc(plan.platform, `owner-${plan.platform}`, `Owner ${plan.platform}`);
+      s.upsertAccount(a, NOW);
+      for (let i = 0; i < plan.old + plan.fresh; i++) {
+        const fresh = i >= plan.old;
+        const publishedAt = fresh ? NOW - (i - plan.old + 1) * 5 * HOUR : NOW - (10 + i) * DAY;
+        const { id } = s.upsertVideo(vid(plan.platform, `${plan.platform}-${i}`, a, { publishedAt, title: `영상 ${i}`, description: null }), NOW, plan.platform);
+        const base = fresh ? plan.freshViews * (1 + (i - plan.old) / 10) : plan.oldViews * (1 + i); // older index = more views per day
+        for (let h = 0; h < 48; h += 3) s.addObservation(id, { t: NOW - h * HOUR, views: Math.round(base + (48 - h)), likes: null, comments: null, shares: null, src: `${plan.platform}@1` });
+      }
+    }
+    const full = buildDatasetDetailed(s, { now: NOW, env: {} });
+    const { dataset, stats } = buildDatasetDetailed(s, { now: NOW, env: {}, budgetBytes: Math.round(full.stats.bytes * 0.7) });
+    expect(stats.prunedVideos).toBeGreaterThan(0);
+    const kept = new Set(dataset.videos.map((v) => v.id));
+    for (const plan of plans) {
+      // every upload of the last 72 h survives on every platform
+      for (let i = plan.old; i < plan.old + plan.fresh; i++) expect(kept.has(`${plan.platform}:${plan.platform}-${i}`)).toBe(true);
+    }
+    // pruning is spread evenly: no platform loses (almost) everything while another keeps (almost) all
+    const prunedBy = (pf: string) => stats.prunedVideoIds.filter((id) => id.startsWith(`${pf}:`)).length;
+    const counts = plans.map((pl) => prunedBy(pl.platform));
+    expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    // within a platform the lowest views per day go first
+    expect(kept.has('peertube:peertube-0')).toBe(false);
+    expect(kept.has('peertube:peertube-39')).toBe(true);
+    const note = dataset.exportNotes.find((n) => n.includes('크기 예산'))!;
+    for (const pl of plans) expect(note).toContain(`${pl.platform} ${prunedBy(pl.platform)}/50`);
+    expect(note).toContain('최근 7일 안에 게시된 영상 0개');
+  });
+
+  it('leaves stored promotional spam and its accounts out of the export, and never exports javascript: URLs', () => {
+    const s = mem();
+    const clean = acc('dailymotion', 'news1', 'YTN news');
+    const spammer = acc('dailymotion', 'ast', 'www.ast8899.com');
+    for (const a of [clean, spammer]) s.upsertAccount(a, NOW);
+    s.upsertVideo(vid('dailymotion', 'ok', clean, { title: '"가만두면 삼천리에 카지노"...김용범 경질 총공세 / YTN', url: 'javascript:alert(document.domain)//' }), NOW, 'dailymotion');
+    s.upsertVideo(vid('dailymotion', 'ad', spammer, { title: '양방 토토 【 공식인증 | AST766.com | 가입코드 7410 】 ✅안전보장메이저', description: '가입*총판문의 GAA56' }), NOW, 'dailymotion');
+    const ds = buildDataset(s, { now: NOW, env: {} });
+    expect(ds.videos.map((v) => v.id)).toEqual(['dailymotion:ok']);
+    expect(ds.accounts.map((a) => a.id)).toEqual(['dailymotion:news1']);
+    expect(ds.videos[0].url).toBe('');
+    expect(ds.exportNotes.some((n) => n.startsWith('홍보성 스팸') && n.includes('영상 1개') && n.includes('계정 1개'))).toBe(true);
+    expect(ds.exportNotes.some((n) => n.includes('http(s)가 아닌 URL'))).toBe(true);
+  });
+
   it('prunes lowest-view stale videos first to fit the byte budget and documents it', () => {
     const s = mem();
     const a = acc('dailymotion', 'owner', 'Owner');
@@ -314,8 +394,10 @@ describe('buildDataset', () => {
       [
         { id: 'youtube:a', platform: 'youtube', name: 'ab' }, // too short latin
         { id: 'dailymotion:a', platform: 'dailymotion', name: 'AB' },
-        { id: 'youtube:b', platform: 'youtube', name: '쯔양' },
-        { id: 'niconico:b', platform: 'niconico', name: '쯔 양' },
+        { id: 'youtube:b', platform: 'youtube', name: '백종원' },
+        { id: 'niconico:b', platform: 'niconico', name: '백 종원' },
+        { id: 'youtube:s', platform: 'youtube', name: '쯔양' }, // exact but short: too little evidence without a handle
+        { id: 'niconico:s', platform: 'niconico', name: '쯔 양' },
         { id: 'youtube:c', platform: 'youtube', name: 'Solo' },
         { id: 'youtube:d', platform: 'youtube', name: 'Excluded' },
         { id: 'peertube:d', platform: 'peertube', name: 'excluded' },
@@ -326,6 +408,40 @@ describe('buildDataset', () => {
     expect(out[0].accountIds).toEqual(['youtube:b', 'niconico:b']);
     expect(out[0].linkStatus).toBe('suggested');
     expect(out[0].note).toContain('자동 제안');
+  });
+
+  it('suggestCreators needs more than an exact short or repetitive name, and live accounts', () => {
+    const recent = NOW - 10 * DAY;
+    const old = NOW - 3000 * DAY;
+    const sugg = (accounts: Parameters<typeof suggestCreators>[0]) => suggestCreators(accounts, new Set(), { now: NOW });
+    // the real false merge: KR cat channel "haha ha" vs a dormant 2017 Dailymotion account "hahaha" with 0 followers
+    expect(
+      sugg([
+        { id: 'youtube:UCOp66Vup07X0YziXaaxqs2A', platform: 'youtube', name: 'haha ha', handle: '@hahahaYouTube', lastUploadAt: recent, followers: null },
+        { id: 'dailymotion:x1lf8d9', platform: 'dailymotion', name: 'hahaha', handle: 'hot37431', lastUploadAt: old, followers: 0 },
+      ]),
+    ).toEqual([]);
+    // distinctive name, but one account is dormant
+    expect(
+      sugg([
+        { id: 'youtube:a', platform: 'youtube', name: 'Paik Jong Won', handle: null, lastUploadAt: recent, followers: null },
+        { id: 'dailymotion:a', platform: 'dailymotion', name: 'paikjongwon', handle: 'pjw1', lastUploadAt: old, followers: 3 },
+      ]),
+    ).toEqual([]);
+    // ... alive through its followers
+    expect(
+      sugg([
+        { id: 'youtube:a', platform: 'youtube', name: 'Paik Jong Won', handle: null, lastUploadAt: recent, followers: null },
+        { id: 'dailymotion:a', platform: 'dailymotion', name: 'paikjongwon', handle: 'pjw1', lastUploadAt: old, followers: 5000 },
+      ]),
+    ).toHaveLength(1);
+    // a matching handle is enough even for a short name
+    const byHandle = sugg([
+      { id: 'youtube:t', platform: 'youtube', name: '쯔양', handle: '@tzuyang6145', lastUploadAt: old, followers: null },
+      { id: 'dailymotion:t', platform: 'dailymotion', name: '쯔 양', handle: 'TZUYANG6145', lastUploadAt: old, followers: null },
+    ]);
+    expect(byHandle).toHaveLength(1);
+    expect(byHandle[0].note).toContain('핸들도 같음');
   });
 });
 

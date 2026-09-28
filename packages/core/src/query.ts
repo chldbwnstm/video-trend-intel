@@ -23,8 +23,8 @@ import type {
 import { AGE_DAYS, PLATFORMS, PLATFORM_LABELS } from './types.ts';
 import type { DatasetIndex } from './dataset.ts';
 import { buildIndex } from './dataset.ts';
-import { DAY, formatInTz, localDateOf, resolveWindow, rollingWindow } from './time.ts';
-import { computeVideoMetrics, rankValue } from './metrics.ts';
+import { DAY, HOUR, formatInTz, isLocalDateWindow, localDateOf, resolveWindow, rollingWindow } from './time.ts';
+import { GROWTH_MIN_PREVIOUS, computeVideoMetrics, rankValue } from './metrics.ts';
 import type { MetricContext } from './metrics.ts';
 import { descendantsOf } from './taxonomy.ts';
 import { compactText, normalizeText } from './text.ts';
@@ -351,10 +351,25 @@ export function sumIncrements(values: readonly MetricValue[], emptyNote = 'no_tr
 
 /* --- labels ---------------------------------------------------------------------------------- */
 
-function dateRangeLabel(w: UtcWindow): string {
+/**
+ * Label of an analysis window for notes and exports. A local date range (both ends at local midnight) is
+ * shown as its inclusive local dates, '2026-09-01~2026-09-30(Asia/Seoul)'; any other window (a rolling
+ * [now - N h, now) window) as its half-open local date-times, '2026-09-28 00:26 ~ 2026-09-29 00:26 (Asia/Seoul)',
+ * so a rolling 24h window is never read as two calendar days.
+ */
+export function windowRangeLabel(w: UtcWindow): string {
+  if (!isLocalDateWindow(w)) {
+    return `${formatInTz(w.startMs, w.tz, 'datetime')} ~ ${formatInTz(w.endMs, w.tz, 'datetime')} (${w.tz})`;
+  }
   const s = localDateOf(w.startMs, w.tz);
-  const e = localDateOf(w.endMs - 1, w.tz);
+  const e = localDateOf(Math.max(w.startMs, w.endMs - 1), w.tz);
   return s === e ? `${s}(${w.tz})` : `${s}~${e}(${w.tz})`;
+}
+
+/** "약 N시간" / "약 N분" for an elapsed span (minutes below one hour, so 26 minutes is never "약 0시간"). */
+export function durationLabel(ms: number): string {
+  if (ms < HOUR) return `약 ${Math.max(0, Math.round(ms / 60_000)).toLocaleString('ko-KR')}분`;
+  return `약 ${Math.round(ms / HOUR).toLocaleString('ko-KR')}시간`;
 }
 
 /** "YYYY-MM-DD HH:mm (tz)" for notes. */
@@ -416,7 +431,7 @@ function sortMetricOf(key: SortKey, m: VideoMetrics, v: Video, mode: DateMode): 
 
 /**
  * Metric used for the in-platform percentile when sorting by 'percentile':
- * upload -> views_total (cumulative as of the window end), activity -> views_period (increase in window),
+ * upload -> views_total (latest cumulative, as of now), activity -> views_period (increase in window),
  * age -> views_at_age.
  */
 export function percentileBaseKey(mode: DateMode): Exclude<SortKey, 'percentile'> {
@@ -446,8 +461,9 @@ function isAgeDays(x: unknown): x is AgeDays {
  * - `now` defaults to dataset.generatedAt. The dataset is read as known at `now` (see indexAsOf).
  * - Throws RangeError for a missing range (upload/activity), a missing/invalid ageDays (age), an unknown sort
  *   key or date mode, malformed dates or an unknown time zone.
- * - minViews compares the displayed viewsTotal (as of min(window end, now)); an unknown value is excluded,
- *   a lower bound passes only when the bound itself reaches minViews.
+ * - minViews compares the displayed viewsTotal (activity: as of min(window end, now); upload / age: as of now, see
+ *   metricsValueInstant); an unknown value is excluded, a lower bound passes only when the bound itself reaches
+ *   minViews.
  * - sortDir only flips the primary order; unrankable rows stay last and the tie-break stays
  *   views_total desc, id asc.
  * - `limit` undefined = all rows; `total` is the filtered count before pagination.
@@ -614,12 +630,13 @@ function queryNotes(x: NotesInput): string[] {
   // Date semantics (design doc §5): always say which one is active and what it means.
   if (x.mode === 'upload' && w) {
     notes.push(
-      `업로드 기간 기준: ${dateRangeLabel(w)}에 게시된 영상만 포함합니다. 누적 조회수 등은 ${instantLabel(Math.min(w.endMs, x.now), tz)} 기준 값입니다. ` +
-        `이 기간 전에 올라와 기간 중 다시 인기를 얻은 영상은 제외되므로, 그런 영상은 '조회 발생 기간' 기준으로 확인하세요.`,
+      `업로드 기간 기준: ${windowRangeLabel(w)}에 게시된 영상만 포함합니다. 누적 조회수 등은 데이터 기준 시각 ${instantLabel(x.now, tz)}의 최신 값입니다` +
+        (w.endMs <= x.now ? `(기간이 끝난 뒤 늘어난 조회도 포함됩니다).` : '.') +
+        ` 이 기간 전에 올라와 기간 중 다시 인기를 얻은 영상은 제외되므로, 그런 영상은 '조회 발생 기간' 기준으로 확인하세요.`,
     );
   } else if (x.mode === 'activity' && w) {
     notes.push(
-      `조회 발생 기간 기준: 게시일과 관계없이 ${dateRangeLabel(w)} 동안 늘어난 조회수·반응으로 비교합니다. ` +
+      `조회 발생 기간 기준: 게시일과 관계없이 ${windowRangeLabel(w)} 동안 늘어난 조회수·반응으로 비교합니다. ` +
         `기간 시작·종료 시점의 관측값(경계 관측이 없으면 원천이 직접 집계한 기간 지표)으로 계산합니다.`,
     );
   } else if (x.mode === 'age' && x.ageDays) {
@@ -627,7 +644,7 @@ function queryNotes(x: NotesInput): string[] {
       `게시 후 경과시간 기준: 각 영상의 게시 후 ${x.ageDays}일 시점(V${x.ageDays}) 값으로 비교합니다. ` +
         `오래된 영상이 누적값에서 유리한 편향을 줄이기 위한 비교입니다.` +
         (w
-          ? ` 게시일이 ${dateRangeLabel(w)}인 영상만 포함하며, 누적 조회수 등 다른 값은 ${instantLabel(Math.min(w.endMs, x.now), tz)} 기준입니다.`
+          ? ` 게시일이 ${windowRangeLabel(w)}인 영상만 포함하며, 누적 조회수 등 다른 값은 데이터 기준 시각 ${instantLabel(x.now, tz)}의 최신 값입니다.`
           : ''),
     );
   }
@@ -670,13 +687,21 @@ function queryNotes(x: NotesInput): string[] {
 
   // Metric definitions for the less obvious sort keys.
   if (x.sort === 'engagement_rate') {
-    notes.push('참여율 = (원천이 제공한 좋아요·댓글·공유의 합) / 조회수입니다. 제공되지 않은 항목은 0으로 계산하지 않고 빼며, 반응 지표가 하나도 없는 영상은 순위에서 제외합니다.');
+    notes.push(
+      '참여율 = (원천이 제공한 좋아요·댓글·공유의 합) / 조회수입니다. 제공되지 않은 항목은 0으로 계산하지 않고 빼며, 반응 지표가 하나도 없는 영상은 순위에서 제외합니다. ' +
+        'niconico 댓글은 영상 위에 흐르는 코멘트(한 시청자가 여러 개 작성)라 다른 플랫폼 댓글과 성격이 달라 참여율에 넣지 않습니다.',
+    );
   } else if (x.sort === 'outperformance') {
     notes.push('계정 평소 대비 성과 = 이 영상의 게시 후 경과시간 조회수 / 같은 계정 다른 영상(3개 이상)의 같은 경과시간 조회수 중앙값입니다.');
   } else if (x.sort === 'growth_vs_prev') {
-    notes.push('성장률 = 기간 증가량 / 직전 같은 길이 기간 증가량 - 1입니다. 직전 기간 값이 0이거나 없으면 계산하지 않습니다.');
+    notes.push(
+      `성장률 = 기간 증가량 / 직전 같은 길이 기간 증가량 - 1입니다. 직전 기간 증가량을 알 수 없거나 ${GROWTH_MIN_PREVIOUS.toLocaleString('ko-KR')}회 미만인 영상, ` +
+        `직전 기간 중에 게시되어 그 기간 전체를 겪지 않은 영상은 계산하지 않습니다(작은 기준값에서 성장률이 과장되는 것 방지).`,
+    );
   } else if (x.sort === 'velocity') {
-    notes.push('증가 속도 = 기간 종료(또는 데이터 기준 시각) 전 약 24시간 동안의 시간당 조회 증가량입니다.');
+    notes.push(
+      '증가 속도 = 기간 종료(또는 데이터 기준 시각) 전 약 24시간 동안의 시간당 조회 증가량입니다. 24시간 구간을 읽을 수 없으면 최근 24시간 안의 마지막 두 관측(1시간 이상 간격)으로 추정하고(≈), 최근 관측이 없으면 계산하지 않습니다.',
+    );
   }
 
   if (x.platforms.size > 1) {

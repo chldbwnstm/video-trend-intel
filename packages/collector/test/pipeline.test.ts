@@ -3,13 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { decodeDataset, encodeDataset, type CompactDataset } from '@vti/core';
-import { collectAndExport, persistResult, redactSecrets, runCollection } from '../src/pipeline.ts';
-import { selectRefreshIds } from '../src/refresh.ts';
+import { adapterTimeoutFromEnv, collectAndExport, persistResult, redactSecrets, runCollection, TAGS_MAX, TITLE_MAX_CHARS } from '../src/pipeline.ts';
+import { refreshCapFor, selectRefreshIds } from '../src/refresh.ts';
+import { peertube, setPeertubeHostResolver } from '../src/sources/peertube.ts';
 import { buildDataset } from '../src/export.ts';
 import { creatorsFromSeeds, emptySeeds, loadSeeds, loadSeedsDetailed } from '../src/seeds.ts';
 import { memoryLogger } from '../src/log.ts';
 import { openStore, type Store } from '../src/store.ts';
-import type { CollectContext, CollectResult, RawAccount, RawVideo, Seeds, SourceAdapter } from '../src/types.ts';
+import type { CollectContext, CollectResult, HttpClient, RawAccount, RawVideo, Seeds, SourceAdapter } from '../src/types.ts';
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -142,7 +143,9 @@ describe('runCollection with fake adapters', () => {
     expect(r1.succeeded).toBe(2);
     expect(r1.totalFailure).toBe(false);
     const s1 = r1.summaries[0];
-    expect(s1).toMatchObject({ videosSeen: 3, videosNew: 3, observations: 3, accountsSeen: 2, gone: 0 });
+    // dm3 came without any counter: its metadata is stored, but no empty observation
+    expect(s1).toMatchObject({ videosSeen: 3, videosNew: 3, observations: 2, accountsSeen: 2, gone: 0 });
+    expect(s1.notes.join(' ')).toMatch(/값이 하나도 없는 영상 1개/);
     expect(r1.summaries[3].errors[0]).toContain('boom');
     expect(r1.summaries[3].errors[0]).not.toContain('supersecret-token-123');
     expect(r1.summaries[3].errors[0]).not.toContain('abc123456');
@@ -154,7 +157,8 @@ describe('runCollection with fake adapters', () => {
     const obs = store.getObservations('dailymotion:dm1');
     expect(obs).toEqual([{ t: NOW, views: 1000, likes: 10, comments: null, shares: null, src: 'fake-dm@2' }]);
     expect(store.getObservations('niconico:sm1')[0].t).toBe(snapshotAt); // snapshot time, not fetch time
-    expect(store.getObservations('dailymotion:dm3')[0]).toMatchObject({ views: null, likes: null });
+    expect(store.getObservations('dailymotion:dm3')).toEqual([]);
+    expect(store.getVideo('dailymotion:dm3')!.lastObservedAt).toBeNull(); // still due first for the refresh tiers
     expect(store.getSourceWindows('dailymotion:dm1')).toEqual([{ metric: 'views', windowHours: 24, value: 400, observedAt: NOW, src: 'fake-dm@2' }]);
     expect(store.getFollowerObservations('dailymotion:owner1')).toEqual([{ t: NOW, value: 1200, src: 'fake-dm@2' }]);
     expect(store.getFollowerObservations('dailymotion:lonely')).toEqual([{ t: NOW, value: 7, src: 'fake-dm@2' }]);
@@ -267,12 +271,152 @@ describe('runCollection with fake adapters', () => {
     await runCollection({ db: store, adapters: [dm], env: {}, now: NOW, seeds: emptySeeds() });
     const r2 = await runCollection({ db: store, adapters: [dm], env: {}, now: NOW + HOUR, seeds: emptySeeds(), refreshCaps: { 'fake-cap': 2 } });
     expect(got[1]).toEqual(['v1', 'v2']); // newest first
-    expect(r2.summaries[0].refresh).toEqual({ requested: 2, due: 5, skipped: 3 });
+    // the adapter returned nothing: 0 of the 5 due videos were re-observed, and the note says so
+    expect(r2.summaries[0].refresh).toEqual({ requested: 2, due: 5, skipped: 3, observed: 0 });
     expect(r2.summaries[0].notes.join(' ')).toMatch(/상한 2개/);
-    expect(store.getSourceState('fake-cap')!.notes.join(' ')).toMatch(/나머지 3개/);
+    expect(store.getSourceState('fake-cap')!.notes.join(' ')).toMatch(/5개 중 0개.*나머지 5개/);
     // cap derived from the request budget: 1 id per request for unknown sources
     expect(selectRefreshIds(store, { id: 'fake-cap', platform: 'dailymotion' }, { now: NOW + 2 * HOUR, maxRequests: 3 }).ids).toHaveLength(3);
     expect(selectRefreshIds(store, { id: 'youtube-rss', platform: 'youtube' }, { now: NOW }).ids).toEqual([]); // cannot refresh by id
+    // budget-bound keyless sources get the whole due list (their adapters skip what discovery returned)
+    expect(refreshCapFor('peertube', 500)).toBe(Number.POSITIVE_INFINITY);
+    expect(refreshCapFor('peertube', 500, { peertube: 7 })).toBe(7);
+    expect(selectRefreshIds(store, { id: 'dailymotion', platform: 'dailymotion' }, { now: NOW + 2 * HOUR, maxRequests: 1 }).ids).toHaveLength(5);
+  });
+
+  it('PeerTube refresh is not starved by fresh ids that discovery returns again (origin requests reach older videos)', async () => {
+    setPeertubeHostResolver(async () => ['93.184.216.34']);
+    try {
+      const store = fileStore();
+      const uuid = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+      const item = (i: number, publishedAt: number, views: number) => ({
+        uuid: uuid(i),
+        name: `video ${i}`,
+        url: `https://tube.example.org/videos/watch/${uuid(i)}`,
+        publishedAt: new Date(publishedAt).toISOString(),
+        duration: 120,
+        views,
+        likes: 1,
+        language: { id: 'en', label: 'English' },
+        account: { name: 'alice', host: 'tube.example.org', displayName: 'Alice' },
+        channel: { name: 'alice_channel', host: 'tube.example.org' },
+      });
+      // 200 fresh videos that SepiaSearch lists every run + 50 videos 3-14 days old that it no longer lists
+      const fresh = Array.from({ length: 200 }, (_, i) => item(i, NOW - (i + 1) * 10 * 60_000, 5));
+      const older = Array.from({ length: 50 }, (_, i) => item(1000 + i, NOW - (4 + (i % 9)) * DAY, 50));
+      const origin: string[] = [];
+      const http = (): HttpClient => {
+        const client = {
+          requestCount: 0,
+          async getJson<T>(url: string): Promise<T> {
+            client.requestCount++;
+            const u = new URL(url);
+            if (u.host === 'sepiasearch.org') {
+              const start = Number(u.searchParams.get('start'));
+              const count = Number(u.searchParams.get('count'));
+              return { total: fresh.length, data: fresh.slice(start, start + count) } as T;
+            }
+            origin.push(u.pathname.split('/').pop()!);
+            const id = u.pathname.split('/').pop()!;
+            const v = [...fresh, ...older].find((x) => x.uuid === id)!;
+            return { ...v, views: v.views + 7 } as T;
+          },
+          async getText(): Promise<string> {
+            throw new Error('not used');
+          },
+        };
+        return client;
+      };
+      const seedsWith = (): Seeds => ({ ...emptySeeds(), peertube: [{ search: null, languageOneOf: null, sort: '-publishedAt', limit: 200 }] });
+      // the store already tracks all 250 (observed 13 h ago, so the 3-14 day tier is due every ~12 h)
+      const acct = acc('peertube', 'alice@tube.example.org', 'Alice');
+      for (const v of [...fresh, ...older]) {
+        const { id } = store.upsertVideo(raw('peertube', `${v.uuid}@tube.example.org`, acct, { publishedAt: Date.parse(v.publishedAt) }), NOW - 13 * HOUR, 'peertube');
+        store.addObservation(id, { t: NOW - 13 * HOUR, views: 1, likes: null, comments: null, shares: null, src: 'peertube@1' });
+      }
+      // budget large enough for every due id: the point is ordering, not the production default cap
+      const r = await runCollection({ db: store, adapters: [peertube], env: {}, now: NOW, seeds: seedsWith(), createHttp: () => http(), maxRequestsPerSource: 500 });
+      const s = r.summaries[0];
+      expect(s.refresh.due).toBe(250);
+      expect(s.refresh.requested).toBe(250); // no pre-discovery cap
+      const olderRequested = older.filter((v) => origin.includes(v.uuid)).length;
+      expect(olderRequested).toBe(50);
+      expect(s.refresh.observed).toBe(250);
+      expect(s.notes.some((n) => n.startsWith('갱신 대상'))).toBe(false); // everything due was re-observed
+      // counters come from the origin (views + 7), never from the stale index copy
+      expect(store.getObservations(`peertube:${uuid(1000)}@tube.example.org`).map((o) => o.views)).toEqual([1, 57]);
+      expect(store.getObservations(`peertube:${uuid(0)}@tube.example.org`).map((o) => o.views)).toEqual([1, 12]);
+    } finally {
+      setPeertubeHostResolver(null);
+    }
+  });
+
+  it('notes tracked videos a feed-only source could not re-observe (youtube-rss accounting)', async () => {
+    const store = fileStore();
+    const ch = acc('youtube', 'UCaaaaaaaaaaaaaaaaaaaaaa', 'Channel');
+    let run = 0;
+    const rss = fake('youtube-rss', 'youtube', (ctx) => {
+      run++;
+      expect(ctx.refreshIds).toEqual([]); // cannot refresh by id
+      const ids = run === 1 ? ['a', 'b', 'c'] : ['c']; // a and b dropped out of the feed
+      return { videos: ids.map((id) => raw('youtube', id, ch, { observedAt: ctx.now, publishedAt: NOW - 2 * HOUR })), accounts: [], errors: [] };
+    });
+    await runCollection({ db: store, adapters: [rss], env: {}, now: NOW, seeds: emptySeeds() });
+    const r2 = await runCollection({ db: store, adapters: [rss], env: {}, now: NOW + 3 * HOUR, seeds: emptySeeds() });
+    expect(r2.summaries[0].refresh).toEqual({ requested: 0, due: 3, skipped: 0, observed: 1 });
+    expect(r2.summaries[0].notes.join(' ')).toMatch(/추적 영상 3개 중 1개만.*나머지 2개는 이 원천이 ID로 다시 조회할 수 없어/);
+  });
+
+  it('never stores promotional spam, non-http(s) URLs or unbounded titles / tags', async () => {
+    const store = fileStore();
+    const good = acc('dailymotion', 'good', 'YTN news');
+    const ad = acc('dailymotion', 'ad', '카지노,바카라,골드카지노,마이다스카지노,호텔카지노pb-1414.com');
+    const dm = fake('fake-dm', 'dailymotion', () => ({
+      videos: [
+        raw('dailymotion', 'news', good, { title: '"가만두면 삼천리에 카지노"...김용범 경질 총공세 / YTN' }),
+        raw('dailymotion', 'spam1', acc('dailymotion', 'x', 'bvqbobwz2668'), { title: '수영출장마사지-후불제 {{ ㅋ ㅏ톡sxx77 }} 수영일상탈출 ⊀Ö1Ô-3O48-6264⊁ 수영출장안마' }),
+        raw('dailymotion', 'spam2', ad, { title: '#ㅂㅏ카라 #ㅋㅏ지노 [#밴쯔] ▶ 자본 2000억원 환전3분컷 안전도메인' }),
+        raw('dailymotion', 'xss', good, {
+          url: 'javascript:alert(document.domain)//',
+          thumbnail: 'data:image/svg+xml,<svg onload=alert(1)>',
+          title: 'x'.repeat(TITLE_MAX_CHARS + 50),
+          tags: Array.from({ length: TAGS_MAX + 10 }, (_, i) => `tag${i}`),
+          account: { ...good, url: 'javascript:alert(1)', avatar: 'vbscript:x' },
+        }),
+      ],
+      accounts: [],
+      errors: [],
+    }));
+    const r = await runCollection({ db: store, adapters: [dm], env: {}, now: NOW, seeds: emptySeeds() });
+    const s = r.summaries[0];
+    expect(s.status).toBe('ok');
+    expect(s.videosSeen).toBe(2);
+    expect(store.getVideo('dailymotion:spam1')).toBeNull();
+    expect(store.getVideo('dailymotion:spam2')).toBeNull();
+    expect(store.getAccount('dailymotion:ad')).toBeNull();
+    expect(store.getVideo('dailymotion:news')).not.toBeNull(); // news that mentions a casino is kept
+    const xss = store.getVideo('dailymotion:xss')!;
+    expect(xss.url).toBe('');
+    expect(xss.thumbnail).toBeNull();
+    expect(Array.from(xss.title)).toHaveLength(TITLE_MAX_CHARS);
+    expect(xss.tags).toHaveLength(TAGS_MAX);
+    expect(store.getAccount('dailymotion:good')!.url).toBe('https://example.org/good');
+    const notes = s.notes.join('\n');
+    expect(notes).toMatch(/홍보성 스팸.*영상 2개\(계정 2개\)/);
+    expect(notes).toMatch(/http\(s\)가 아닌 URL 4개/);
+    expect(notes).toMatch(/잘라서 저장함/);
+  });
+
+  it('reads the per-adapter time limit from COLLECT_ADAPTER_TIMEOUT_MIN', async () => {
+    expect(adapterTimeoutFromEnv({ COLLECT_ADAPTER_TIMEOUT_MIN: '12' })).toBe(12 * 60_000);
+    expect(adapterTimeoutFromEnv({ COLLECT_ADAPTER_TIMEOUT_MIN: '0.001' })).toBe(60);
+    expect(adapterTimeoutFromEnv({ COLLECT_ADAPTER_TIMEOUT_MIN: 'x' })).toBeUndefined();
+    expect(adapterTimeoutFromEnv({})).toBeUndefined();
+    const store = fileStore();
+    const hang = fake('fake-hang', 'peertube', () => new Promise<CollectResult>((resolve) => setTimeout(() => resolve({ videos: [], accounts: [], errors: [] }), 400)));
+    const r = await runCollection({ db: store, adapters: [hang], env: { COLLECT_ADAPTER_TIMEOUT_MIN: '0.001' }, now: NOW, seeds: emptySeeds() });
+    expect(r.summaries[0].status).toBe('error');
+    expect(r.summaries[0].errors[0]).toMatch(/시간 한도 초과/);
   });
 
   it('collectAndExport writes dataset + meta even when collection fails', async () => {

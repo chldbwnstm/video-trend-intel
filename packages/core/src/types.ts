@@ -226,8 +226,9 @@ export interface Dataset {
 
 /**
  * How a metric value was obtained. Every number shown in the UI carries one of these.
- * - exact: an observation lies within the boundary tolerance of the requested instant,
- *          or the value is known by definition (e.g. 0 views before publish).
+ * - exact: an observation lies within the boundary tolerance of the requested instant (2h; for a window
+ *          increment also at most 5% of the window length), or the value is known by definition (e.g. 0 views
+ *          before publish).
  * - interpolated: linear interpolation between two bracketing observations whose gap is
  *          within the allowed max gap.
  * - lower_bound: true value is >= value (e.g. window starts before our first observation).
@@ -255,7 +256,7 @@ export interface MetricValue {
 
 /**
  * Date semantics (docs/competitive-analysis/comparison-and-product-direction.md §5):
- * - upload:   videos whose publishedAt is inside the window; rank by value as of `asOf`.
+ * - upload:   videos whose publishedAt is inside the window; rank by their latest value, as of the data's now.
  * - activity: all videos; rank by counter increase that happened inside the window.
  * - age:      compare videos at the same age: value at publishedAt + ageDays.
  */
@@ -325,9 +326,13 @@ export interface VideoQuery {
 }
 
 export interface VideoMetrics {
-  /** Latest cumulative views as of min(window end, now). */
+  /**
+   * Cumulative views: as of min(window end, now) in activity mode; the latest value, as of `now`, in upload and
+   * age mode (design doc §5: uploads of a period ranked by their current views; may include views gained after
+   * the window ended).
+   */
   viewsTotal: MetricValue;
-  /** Increase inside the window (activity mode) — or since publish for upload mode. */
+  /** Increase inside the window (activity mode) — or since publish, as of now, for upload mode. */
   viewsPeriod: MetricValue;
   likesPeriod: MetricValue;
   commentsPeriod: MetricValue;
@@ -390,6 +395,8 @@ export interface TrendingResult {
 export interface OpportunityItem {
   topic: string;
   label: string;
+  /** Other topics with exactly the same videos, merged into this one (e.g. one channel's paired tags). */
+  aliases?: string[];
   /** Median views-per-video (demand) among videos uploaded in the window. */
   demand: number;
   /** Number of videos uploaded in the window in our tracked set (supply). */

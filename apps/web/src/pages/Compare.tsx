@@ -40,6 +40,7 @@ import { formatLocalRange, platformListCodec } from '../lib/urlState.ts';
 import { cx } from '../lib/cx.ts';
 import {
   compareColor,
+  comparePalette,
   compareSeries,
   computeComparison,
   countLeaders,
@@ -50,14 +51,25 @@ import {
   portfolioOptions,
   slotLabel,
   statusCounts,
+  windowBeforeCollection,
 } from '../features/creators/logic.ts';
 import type { CompareData, CompareEntry, Leaders, PortfolioOption } from '../features/creators/logic.ts';
-import { CreatorPicker, DataStateNote, FollowersCell, LinkStatusBadge, PlatformStrip } from '../features/creators/parts.tsx';
+import {
+  CompareSlotDot,
+  CreatorPicker,
+  DataStateNote,
+  FollowersCell,
+  LinkStatusBadge,
+  PlatformStrip,
+  PreCollectionCallout,
+} from '../features/creators/parts.tsx';
+import { dataReadiness } from '../features/trends/readiness.ts';
 
 const COMPARE_PRESETS = ['rolling24h', 'rolling7d', 'rolling30d', 'today', 'yesterday', 'last7d', 'last30d', 'last90d', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'] as const;
 
 export default function ComparePage() {
-  const { now, tz } = useDataset();
+  const { dataset, now, tz } = useDataset();
+  const readiness = useMemo(() => dataReadiness(dataset), [dataset]);
   const { spec, range, rollingHours, setSpec } = useRangeParam('range', 'rolling30d');
   const [rawKeys, setKeys] = useUrlState<string[]>('keys', []);
   const [platforms, setPlatforms] = useUrlState<Platform[]>('platforms', [], { codec: platformListCodec });
@@ -71,6 +83,9 @@ export default function ComparePage() {
   const remove = (k: string) => setKeys(keys.filter((x) => x !== k));
   const names = useMemo(() => new Map((cmp.data?.entries ?? []).map((e) => [e.key, e.name])), [cmp.data]);
   const allPlatforms = useMemo(() => orderPlatforms((options.data ?? []).flatMap((o) => o.platforms)), [options.data]);
+  // Slot colors avoid the platform badge colors of this dataset; the slot number is the non-color cue.
+  const palette = useMemo(() => comparePalette(allPlatforms), [allPlatforms]);
+  const beforeCollection = cmp.data ? windowBeforeCollection(cmp.data.window, readiness.firstObservationAt, now) : false;
 
   return (
     <div className="flex flex-col gap-4">
@@ -96,7 +111,7 @@ export default function ComparePage() {
             key={k}
             onRemove={() => remove(k)}
             removeLabel={`${names.get(k) ?? k} 비교에서 제외`}
-            icon={<span className="inline-block size-2.5 rounded-full" style={{ background: compareColor(i) }} />}
+            icon={<CompareSlotDot index={i} color={compareColor(i, palette)} />}
           >
             {names.get(k) ?? k}
           </Chip>
@@ -127,6 +142,17 @@ export default function ComparePage() {
         </p>
       </FilterBar>
 
+      {beforeCollection && keys.length ? (
+        <PreCollectionCallout
+          readiness={readiness}
+          rangeLabel={`${formatLocalRange(range)}, ${tzShort(tz)}`}
+          onRecent={() => setSpec('rolling30d')}
+          recentLabel="최근 30일(롤링)로 비교"
+        >
+          그래서 이 기간에는 조회 증가·참여율에 &apos;최고&apos;를 표시하지 않음. 기간 업로드·V7·팔로워는 게시일·최신 관측 기준이라 비교할 수 있음.
+        </PreCollectionCallout>
+      ) : null}
+
       {keys.length === 0 ? (
         <Suggestions options={options.data} onPick={(ks) => setKeys(ks)} />
       ) : cmp.error ? (
@@ -138,12 +164,22 @@ export default function ComparePage() {
           <LoadingState rows={6} />
         </Card>
       ) : (
-        <CompareBody data={cmp.data} stale={cmp.isStale} spec={spec} onRemove={remove} filtered={platforms.length > 0} onPlatform={(p) => setPlatforms([p])} />
+        <CompareBody
+          data={cmp.data}
+          stale={cmp.isStale}
+          spec={spec}
+          onRemove={remove}
+          filtered={platforms.length > 0}
+          onPlatform={(p) => setPlatforms([p])}
+          palette={palette}
+          beforeCollection={beforeCollection}
+        />
       )}
 
       <SourceNote asOf={now} window={cmp.data?.window ?? null}>
         <p>
-          최고 표시는 값이 있는 크리에이터끼리만 비교함. 다른 값이 하한(≥)이거나 계산 불가(—)면 순위가 바뀔 수 있어 &quot;잠정&quot;으로 표시함.
+          최고 표시는 값이 있는 크리에이터끼리만 비교함. 다른 값이 하한(≥)이거나 계산 불가(—)면 순위가 바뀔 수 있어 &quot;잠정&quot;으로 표시함. 모두 같은 값이거나
+          가장 높은 값이 0이면 앞선 쪽이 없어 표시하지 않음. 색과 번호는 비교 순서(슬롯)를 따르며 플랫폼 색과 겹치지 않게 고름.
         </p>
       </SourceNote>
     </div>
@@ -197,6 +233,8 @@ function CompareBody({
   onRemove,
   filtered,
   onPlatform,
+  palette,
+  beforeCollection,
 }: {
   data: CompareData;
   stale: boolean;
@@ -204,6 +242,8 @@ function CompareBody({
   onRemove: (key: string) => void;
   filtered: boolean;
   onPlatform: (p: Platform) => void;
+  palette: string[];
+  beforeCollection: boolean;
 }) {
   const found = data.entries.filter((e) => e.found);
   const missing = data.entries.filter((e) => !e.found);
@@ -252,11 +292,18 @@ function CompareBody({
               <CardHeader
                 icon={<Table2 className="size-4" />}
                 title="핵심 지표 비교"
-                description="같은 기간의 포트폴리오 지표. 지표마다 가장 높은 값에 '최고' 표시 (값 상태가 불완전하면 '잠정')."
+                description="같은 기간의 포트폴리오 지표. 지표마다 가장 높은 값에 '최고' 표시 (값 상태가 불완전하면 '잠정', 모두 같거나 0이면 표시 없음)."
               />
             </div>
             <SectionBoundary title="지표 비교표를 표시하지 못함" compact>
-              <KpiTable entries={data.entries} missingFollowerPlatforms={data.missingFollowerPlatforms} spec={spec} onRemove={onRemove} />
+              <KpiTable
+                entries={data.entries}
+                missingFollowerPlatforms={data.missingFollowerPlatforms}
+                spec={spec}
+                onRemove={onRemove}
+                palette={palette}
+                beforeCollection={beforeCollection}
+              />
             </SectionBoundary>
             <div className="px-4 pb-4 sm:px-5">
               <DataStateNote
@@ -268,7 +315,7 @@ function CompareBody({
 
           <Card>
             <SectionBoundary title="일별 비교 차트를 표시하지 못함" compact>
-              <TimelineCompare entries={data.entries} mixed={mixed} />
+              <TimelineCompare entries={data.entries} mixed={mixed} palette={palette} />
             </SectionBoundary>
           </Card>
 
@@ -279,7 +326,7 @@ function CompareBody({
               description="같은 플랫폼 안에서만 비교 (같은 조회 단위). 플랫폼마다 가장 높은 기간 조회 증가에 '최고' 표시."
             />
             <SectionBoundary title="플랫폼별 비교를 표시하지 못함" compact>
-              <PlatformBreakdown data={data} />
+              <PlatformBreakdown data={data} palette={palette} beforeCollection={beforeCollection} />
             </SectionBoundary>
           </Card>
         </>
@@ -322,14 +369,20 @@ function KpiTable({
   missingFollowerPlatforms,
   spec,
   onRemove,
+  palette,
+  beforeCollection,
 }: {
   entries: CompareEntry[];
   missingFollowerPlatforms: Platform[];
   spec: string;
   onRemove: (key: string) => void;
+  palette: string[];
+  /** Window before the first observation: increases are unknown, so they get no leader. */
+  beforeCollection: boolean;
 }) {
   const cols = entries.map((e, i) => ({ e, i })).filter(({ e }) => e.found && e.summary);
   const metric = (pick: (e: CompareEntry) => MetricValue | null | undefined) => metricLeaders(cols.map(({ e }) => pick(e) ?? null));
+  const windowMetric = (pick: (e: CompareEntry) => MetricValue | null | undefined) => (beforeCollection ? undefined : metric(pick));
   const counts = (pick: (e: CompareEntry) => number) => countLeaders(cols.map(({ e }) => pick(e)));
   const rows: KpiRow[] = [
     {
@@ -341,7 +394,7 @@ function KpiTable({
       id: 'views',
       label: '기간 조회 증가',
       hint: '게시일과 관계없이 기간에 늘어난 조회 합계. 여러 플랫폼 합계는 단위가 다름.',
-      leaders: metric((e) => e.summary!.viewsInWindow),
+      leaders: windowMetric((e) => e.summary!.viewsInWindow),
       cell: (e) => <MetricCell metric={e.summary!.viewsInWindow} label="기간 조회 증가" />,
     },
     {
@@ -354,7 +407,7 @@ function KpiTable({
       id: 'engagement',
       label: '참여율 (중앙값)',
       hint: '영상별 (반응 수/조회)의 중앙값. 원천이 준 반응 항목만 반영.',
-      leaders: metric((e) => e.summary!.engagementRate),
+      leaders: windowMetric((e) => e.summary!.engagementRate),
       cell: (e) => <MetricCell metric={e.summary!.engagementRate} kind="rate" label="참여율(중앙값)" />,
     },
     {
@@ -374,7 +427,7 @@ function KpiTable({
     {
       id: 'growth',
       label: '기간 팔로워 증가',
-      leaders: metric((e) => e.summary!.followersGrowth),
+      leaders: windowMetric((e) => e.summary!.followersGrowth),
       cell: (e) => <MetricCell metric={e.summary!.followersGrowth} label="기간 팔로워 증가" unit="명" />,
     },
     {
@@ -424,7 +477,7 @@ function KpiTable({
                 <span className="flex items-start justify-end gap-1">
                   <span className="flex min-w-0 flex-col items-end gap-0.5">
                     <span className="flex items-center gap-1.5">
-                      <span aria-hidden className="inline-block size-2.5 shrink-0 rounded-full" style={{ background: compareColor(i) }} />
+                      <CompareSlotDot index={i} color={compareColor(i, palette)} />
                       <Link to={creatorHref(e.key, { range: spec })} className="focus-ring line-clamp-2 rounded-sm text-[13px] font-semibold text-fg hover:text-accent-text hover:underline">
                         {e.name}
                       </Link>
@@ -475,9 +528,9 @@ function KpiTable({
 
 /* ------------------------------------------------------------------------------------------ timeline */
 
-function TimelineCompare({ entries, mixed }: { entries: CompareEntry[]; mixed: boolean }) {
+function TimelineCompare({ entries, mixed, palette }: { entries: CompareEntry[]; mixed: boolean; palette: string[] }) {
   const { tz } = useDataset();
-  const series = useMemo(() => compareSeries(entries), [entries]);
+  const series = useMemo(() => compareSeries(entries, palette), [entries, palette]);
   const states = useMemo(() => statusCounts(entries.flatMap((e) => e.daily.map((d) => d.metric)).filter((m) => m.note !== 'window_not_started')), [entries]);
   return (
     <>
@@ -513,8 +566,10 @@ function TimelineCompare({ entries, mixed }: { entries: CompareEntry[]; mixed: b
 
 /* ------------------------------------------------------------------------------------------ per platform */
 
-function PlatformBreakdown({ data }: { data: CompareData }) {
-  const color = new Map(data.entries.map((e, i) => [e.key, compareColor(i)]));
+const NO_LEAD: Leaders = { indices: [], firm: false };
+
+function PlatformBreakdown({ data, palette, beforeCollection }: { data: CompareData; palette: string[]; beforeCollection: boolean }) {
+  const slot = new Map(data.entries.map((e, i) => [e.key, i]));
   if (!data.platforms.length) return <EmptyState compact title="비교할 플랫폼 데이터 없음" />;
   return (
     <div className="flex flex-col gap-4">
@@ -523,8 +578,8 @@ function PlatformBreakdown({ data }: { data: CompareData }) {
           .filter((e) => e.found)
           .map((e) => ({ e, b: e.perPlatform.find((x) => x.platform === p) ?? null }))
           .filter((r) => r.b !== null);
-        const views = metricLeaders(rows.map((r) => r.b!.summary.viewsInWindow));
-        const eng = metricLeaders(rows.map((r) => r.b!.summary.engagementRate));
+        const views = beforeCollection ? NO_LEAD : metricLeaders(rows.map((r) => r.b!.summary.viewsInWindow));
+        const eng = beforeCollection ? NO_LEAD : metricLeaders(rows.map((r) => r.b!.summary.engagementRate));
         return (
           <section key={p} aria-label={`${platformLabel(p)} 비교`}>
             <h3 className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold text-fg">
@@ -551,7 +606,7 @@ function PlatformBreakdown({ data }: { data: CompareData }) {
                     <tr key={e.key}>
                       <th scope="row" className="border-b border-line px-3 py-1.5 text-left font-medium text-fg">
                         <span className="flex items-center gap-1.5">
-                          <span aria-hidden className="inline-block size-2 shrink-0 rounded-full" style={{ background: color.get(e.key) }} />
+                          <CompareSlotDot index={slot.get(e.key) ?? 0} color={compareColor(slot.get(e.key) ?? 0, palette)} />
                           <span className="truncate">{e.name}</span>
                         </span>
                       </th>

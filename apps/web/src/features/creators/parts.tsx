@@ -7,10 +7,12 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import type { Platform } from '@vti/core';
 import { Check, Plus, TriangleAlert, UserRound } from 'lucide-react';
-import { Badge, MetricCell, PlatformBadge, Popover, Tooltip, safeHttpUrl } from '../../components/index.ts';
+import { Badge, Button, MetricCell, PlatformBadge, Popover, Tooltip, safeHttpUrl } from '../../components/index.ts';
+import type { DataReadiness } from '../trends/readiness.ts';
+import { ReadinessCallout } from '../trends/ReadinessCallout.tsx';
 import { cx } from '../../lib/cx.ts';
 import { formatCompact, formatInteger } from '../../lib/format.ts';
-import { STATUS_META } from '../../lib/metricStatus.ts';
+import { STATUS_META, statusCountLabel } from '../../lib/metricStatus.ts';
 import { platformColor } from '../../lib/platform.ts';
 import { tzShort } from '../../lib/timezones.ts';
 import {
@@ -99,6 +101,60 @@ export function PlatformStrip({ platforms, highlight = true, size = 'xs' }: { pl
   );
 }
 
+/**
+ * Compare-slot marker: the slot number inside a ring of the slot color. The number is the non-color cue that
+ * ties chips, table columns and chart lines together (chart legend labels start with the same number).
+ */
+export function CompareSlotDot({ index, color, className }: { index: number; color: string; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cx('inline-flex size-4 shrink-0 items-center justify-center rounded-full border-2 text-[10px] leading-none font-semibold text-fg tabular', className)}
+      style={{ borderColor: color, background: `color-mix(in srgb, ${color} 22%, transparent)` }}
+    >
+      {index + 1}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------ pre-collection */
+
+/**
+ * Callout for a window that ends before the first observation: view / follower increases of that window are
+ * unknown (shown as ≥ 0 / —), so the page must not read like a leaderboard of zeros. `children` says what the
+ * page does instead; `onRecent` offers switching to a recent window.
+ */
+export function PreCollectionCallout({
+  readiness,
+  rangeLabel,
+  children,
+  onRecent,
+  recentLabel = '최근 7일(롤링)로 보기',
+}: {
+  readiness: DataReadiness;
+  /** The selected period as shown in the filter bar, e.g. `2026-08-01 ~ 2026-08-31 (KST)`. */
+  rangeLabel: string;
+  children?: ReactNode;
+  onRecent?: () => void;
+  recentLabel?: string;
+}) {
+  return (
+    <ReadinessCallout readiness={readiness} title="선택한 기간은 첫 관측 이전임">
+      <p>
+        선택한 기간({rangeLabel})은 이 서비스가 첫 관측을 하기 전이라 그 기간의 조회 증가·팔로워 증가·참여율을 알 수 없음. 표의 ≥ 0·—는 0이 아니라
+        &apos;관측 없음&apos;이라는 뜻임. {children}
+      </p>
+      {onRecent ? (
+        <p className="mt-1.5">
+          <Button size="sm" variant="primary" onClick={onRecent}>
+            {recentLabel}
+          </Button>
+        </p>
+      ) : null}
+    </ReadinessCallout>
+  );
+}
+
 /* ------------------------------------------------------------------------------------------ followers */
 
 export function FollowersCell({
@@ -143,8 +199,7 @@ export function DataStateNote({ counts, label, children, className }: { counts: 
         {STATUS_SHOWN.filter((s) => counts[s] > 0).map((s) => (
           <Tooltip key={s} content={STATUS_META[s].description}>
             <span className="tabular">
-              {STATUS_META[s].marker ? `${STATUS_META[s].marker} ` : ''}
-              {STATUS_META[s].label} {formatInteger(counts[s])}
+              {statusCountLabel(s)} {formatInteger(counts[s])}
             </span>
           </Tooltip>
         ))}

@@ -4,13 +4,17 @@ import {
   computeVideoMetrics,
   cumulativeAsOf,
   engagementAt,
+  growthVsPrevious,
   outperformanceOf,
   rankValue,
+  sourceWindowImplausibility,
   sourceWindowValue,
   velocityAt,
+  windowIncrement,
   type MetricContext,
 } from '../src/metrics.ts';
-import { localDateStartUtc, presetRange, resolveWindow } from '../src/time.ts';
+import { localDateStartUtc, presetRange, resolveWindow, rollingWindow } from '../src/time.ts';
+import { queryVideos } from '../src/query.ts';
 import type { AgeDays, DateMode, UtcWindow, Video } from '../src/types.ts';
 import type { DatasetIndex } from '../src/dataset.ts';
 import { DAY_MS, HOUR_MS, makeIndex, makeObs, makeSourceWindow, makeVideo, obsOf, ts } from './fixtures.ts';
@@ -51,15 +55,26 @@ describe('design doc §5 worked example (A/B/C)', () => {
 
   it('upload mode: B > C among September uploads; A is published before the window (excluded by the query)', () => {
     const m = (v: Video) => computeVideoMetrics(v, ctx('upload', sep, now, index));
-    expect(m(B).viewsPeriod).toMatchObject({ value: 2_000_000, status: 'exact' });
-    expect(m(C).viewsPeriod).toMatchObject({ value: 800_000, status: 'exact' });
-    // A's value since publish as of the window end is its cumulative 6,000,000; the upload filter
-    // (publishedAt in window) is applied by queryVideos, not here.
-    expect(m(A).viewsPeriod).toMatchObject({ value: 6_000_000, status: 'exact' });
+    // Values are the latest ones as of `now` (design doc section 5: current views of September uploads). The last
+    // observation is 9h before now, so they are lower bounds (the count can only have grown since).
+    expect(m(B).viewsPeriod).toMatchObject({ value: 2_000_000, status: 'lower_bound', asOf: sep.endMs });
+    expect(m(C).viewsPeriod).toMatchObject({ value: 800_000, status: 'lower_bound' });
+    // A's value since publish is its cumulative 6,000,000; the upload filter (publishedAt in window) is applied
+    // by queryVideos, not here.
+    expect(m(A).viewsPeriod).toMatchObject({ value: 6_000_000, status: 'lower_bound' });
     expect(A.publishedAt).toBeLessThan(sep.startMs);
     const uploads = [A, B, C].filter((v) => v.publishedAt >= sep.startMs && v.publishedAt < sep.endMs);
     expect(rankOrder(uploads, (v) => rankValue(m(v).viewsPeriod))).toEqual(['youtube:B', 'youtube:C']);
-    expect(m(B).viewsTotal).toMatchObject({ value: 2_000_000, status: 'exact', asOf: sep.endMs });
+    expect(m(B).viewsTotal).toEqual(m(B).viewsPeriod);
+  });
+
+  it('upload mode reads current values even when no observation lies near the (finished) window end', () => {
+    // Discovered after September ended: one observation on 10-01 23:00Z, one hour before now.
+    const late = makeVideo({ id: 'youtube:late', publishedAt: ts('2026-09-20'), obs: [makeObs(now - H, 70_000)] });
+    const m = computeVideoMetrics(late, ctx('upload', sep, now, makeIndex({ videos: [late] })));
+    expect(m.viewsTotal).toEqual({ value: 70_000, status: 'exact', asOf: now - H, note: null });
+    expect(m.viewsPeriod).toEqual(m.viewsTotal);
+    expect(rankValue(m.viewsTotal)).toBe(70_000);
   });
 
   it('on the research date (2026-09-28) September is an incomplete window and values are as of now', () => {
@@ -162,7 +177,7 @@ describe('source_reported fallback (activity mode)', () => {
   const tracked = (extra: Partial<Video> = {}) =>
     makeVideo({
       publishedAt: ts('2025-06-01'),
-      obs: [makeObs(now - 48 * H, 10_000), makeObs(now - 20 * 60_000, 14_000)],
+      obs: [makeObs(now - 48 * H, 100_000), makeObs(now - 20 * 60_000, 104_000)],
       ...extra,
     });
 
@@ -179,7 +194,7 @@ describe('source_reported fallback (activity mode)', () => {
     const w: UtcWindow = { startMs: now - 24 * H, endMs: now, tz: 'UTC', incomplete: false };
     const v = makeVideo({
       publishedAt: ts('2025-06-01'),
-      obs: [obsOf(now - 5 * H, { views: 1000, likes: 10 }), obsOf(now - 60_000, { views: 1500, likes: 12 })],
+      obs: [obsOf(now - 5 * H, { views: 10_000, likes: 100 }), obsOf(now - 60_000, { views: 10_500, likes: 102 })],
       sourceWindows: [makeSourceWindow('views', 24, 2_500, now - H), makeSourceWindow('likes', 24, 30, now - H)],
     });
     const m = computeVideoMetrics(v, ctx('activity', w, now, makeIndex({ videos: [v] })));
@@ -219,6 +234,61 @@ describe('source_reported fallback (activity mode)', () => {
   });
 });
 
+describe('implausible source windows (Dailymotion views_last_month = lifetime views)', () => {
+  // Real example: dailymotion:x9jdbui, published 2025-05-12, 66,191 lifetime views, w24 = 0, w168 = 0, w720 = 66,191
+  const T = ts('2026-09-28T15:26:16Z');
+  const old = makeVideo({
+    id: 'dailymotion:x9jdbui',
+    publishedAt: ts('2025-05-12T11:31:49Z'),
+    obs: [makeObs(T - 10 * 60_000, 66_191)],
+    sourceWindows: [makeSourceWindow('views', 24, 0, T), makeSourceWindow('views', 168, 0, T), makeSourceWindow('views', 720, 66_191, T)],
+  });
+  const w720 = rollingWindow(720, T, SEOUL);
+
+  it('a window value equal to the lifetime count of a video older than the window is rejected', () => {
+    expect(sourceWindowImplausibility(old, old.sourceWindows[2])).toBe('window_equals_lifetime');
+    expect(sourceWindowValue(old, 'views', w720, T)).toBeNull();
+    expect(windowIncrement(old, 'views', w720, T)).toEqual({ value: null, status: 'unavailable', asOf: null, note: 'source_window_implausible' });
+    // the day / week windows of the same report are consistent (0 for an inactive old video) and still used
+    expect(sourceWindowImplausibility(old, old.sourceWindows[0])).toBeNull();
+    expect(windowIncrement(old, 'views', rollingWindow(24, T, SEOUL), T)).toMatchObject({ value: 0, status: 'source_reported' });
+  });
+
+  it('never ranks such a video as a 30-day riser', () => {
+    const riser = makeVideo({
+      id: 'dailymotion:new',
+      publishedAt: T - 5 * D,
+      obs: [makeObs(T - 10 * 60_000, 40_000)],
+      sourceWindows: [makeSourceWindow('views', 720, 40_000, T)], // younger than 30 days: all its views are in the window
+    });
+    const r = queryVideos(makeIndex({ videos: [old, riser], generatedAt: T }), { dateMode: 'activity', rollingHours: 720, tz: SEOUL, sort: 'views_period' });
+    expect(r.rows.map((x) => [x.video.id, x.metrics.viewsPeriod.status])).toEqual([
+      ['dailymotion:new', 'exact'], // published inside the window: 0 at its start by definition
+      ['dailymotion:x9jdbui', 'unavailable'],
+    ]);
+  });
+
+  it('rejects windows larger than a later lifetime count, and inconsistent reports', () => {
+    const v = makeVideo({ publishedAt: T - 3 * D, obs: [makeObs(T + 5 * 60_000, 1_000)], sourceWindows: [makeSourceWindow('views', 168, 5_000, T)] });
+    expect(sourceWindowImplausibility(v, v.sourceWindows[0])).toBe('window_exceeds_lifetime');
+    const inc = makeVideo({ publishedAt: T - 60 * D, sourceWindows: [makeSourceWindow('views', 24, 500, T), makeSourceWindow('views', 168, 100, T)] });
+    expect(sourceWindowImplausibility(inc, inc.sourceWindows[0])).toBe('windows_inconsistent');
+    expect(sourceWindowImplausibility(inc, inc.sourceWindows[1])).toBe('windows_inconsistent');
+    // nothing to check against: plausible
+    const bare = makeVideo({ publishedAt: T - 60 * D, sourceWindows: [makeSourceWindow('views', 168, 100, T)] });
+    expect(sourceWindowImplausibility(bare, bare.sourceWindows[0])).toBeNull();
+  });
+
+  it('a source value below our own lower bound keeps the lower bound', () => {
+    const v = makeVideo({
+      publishedAt: ts('2025-01-01'),
+      obs: [makeObs(T - 100 * H, 10_000), makeObs(T - 5 * 60_000, 20_000)],
+      sourceWindows: [makeSourceWindow('views', 168, 3_000, T)],
+    });
+    expect(windowIncrement(v, 'views', rollingWindow(168, T, SEOUL), T)).toMatchObject({ value: 10_000, status: 'lower_bound' });
+  });
+});
+
 describe('viewsTotal', () => {
   const now = ts('2026-09-28T03:00Z');
   it('exact when an observation is within 2h of min(window end, now)', () => {
@@ -230,10 +300,13 @@ describe('viewsTotal', () => {
     const m = computeVideoMetrics(v, ctx('age', null, now, makeIndex({ videos: [v] }), 1));
     expect(m.viewsTotal).toEqual({ value: 1234, status: 'lower_bound', asOf: now - 10 * H, note: 'after_last_observation' });
   });
-  it('as of the window end for past windows', () => {
+  it('activity mode: as of the window end for past windows; upload / age mode: as of now', () => {
     const w = resolveWindow({ start: '2026-09-01', end: '2026-09-10' }, SEOUL, now);
     const v = makeVideo({ publishedAt: ts('2026-08-01'), obs: [makeObs(w.endMs - H, 500), makeObs(now - H, 9000)] });
-    expect(computeVideoMetrics(v, ctx('upload', w, now, makeIndex({ videos: [v] }))).viewsTotal).toMatchObject({ value: 500, status: 'exact' });
+    const idx = makeIndex({ videos: [v] });
+    expect(computeVideoMetrics(v, ctx('activity', w, now, idx)).viewsTotal).toMatchObject({ value: 500, status: 'exact' });
+    expect(computeVideoMetrics(v, ctx('upload', w, now, idx)).viewsTotal).toMatchObject({ value: 9000, status: 'exact', asOf: now - H });
+    expect(computeVideoMetrics(v, ctx('age', w, now, idx, 7)).viewsTotal).toMatchObject({ value: 9000, status: 'exact', asOf: now - H });
   });
   it('unavailable when views are never provided', () => {
     const v = makeVideo({ publishedAt: ts('2026-09-01'), obs: [obsOf(now - H, { likes: 5 })] });
@@ -258,13 +331,30 @@ describe('velocity', () => {
     expect(velocityAt(v, now, now)).toMatchObject({ value: 200, status: 'exact' });
   });
 
-  it('falls back to the last two observations spanning >= 1h', () => {
-    const v = makeVideo({ publishedAt: ts('2025-01-01'), obs: [makeObs(now - 10 * D, 300), makeObs(now - 3 * D - 30 * 60_000, 900), makeObs(now - 3 * D, 1000)] });
+  it('falls back to the last two recent observations spanning >= 1h', () => {
+    // The 24h start precedes the first observation and the last one is 3h old: the 24h increase is only a
+    // lower bound, so the rate between the last two observations (>= 1h apart) is used.
+    const v = makeVideo({ publishedAt: ts('2025-01-01'), obs: [makeObs(now - 20 * H, 300), makeObs(now - 3 * H - 30 * 60_000, 900), makeObs(now - 3 * H, 1000)] });
     const m = velocityAt(v, now, now);
     expect(m.status).toBe('interpolated');
     expect(m.note).toBe('last_two_observations');
-    expect(m.asOf).toBe(now - 3 * D);
-    expect(m.value).toBeCloseTo(700 / 168, 9); // skips the pair only 30 min apart
+    expect(m.asOf).toBe(now - 3 * H);
+    expect(m.value).toBeCloseTo(700 / 17, 9); // skips the pair only 30 min apart
+  });
+
+  it('never ranks a stale pair of observations as the current velocity', () => {
+    // Observed only while it was new (a video that left its channel's RSS feed): weeks-old pace.
+    const stale = makeVideo({ id: 'youtube:stale', publishedAt: ts('2026-06-01'), obs: [makeObs('2026-07-01', 1_000), makeObs('2026-07-08', 1_000_000)] });
+    expect(velocityAt(stale, now, now)).toMatchObject({ value: null, status: 'unavailable', note: 'stale_observations' });
+    // The last observation is recent but the previous one is more than the interpolation gap (48h) older.
+    const wide = makeVideo({ publishedAt: ts('2025-01-01'), obs: [makeObs(now - 10 * D, 300), makeObs(now - 3 * H, 1000)] });
+    expect(velocityAt(wide, now, now)).toMatchObject({ status: 'unavailable', note: 'stale_observations' });
+    const fresh = makeVideo({ id: 'youtube:fresh', publishedAt: ts('2026-09-01'), obs: [makeObs(now - 24 * H, 50_000), makeObs(now, 74_000)] });
+    expect(velocityAt(fresh, now, now)).toMatchObject({ value: 1_000, status: 'exact' });
+    const idx = makeIndex({ videos: [stale, fresh], generatedAt: now });
+    const w: UtcWindow = { startMs: now - 24 * H, endMs: now, tz: SEOUL, incomplete: false };
+    const order = rankOrder([stale, fresh], (x) => rankValue(computeVideoMetrics(x, ctx('activity', w, now, idx)).velocity));
+    expect(order).toEqual(['youtube:fresh']);
   });
 
   it('unavailable with fewer than two usable observations; flagged when decreasing', () => {
@@ -295,6 +385,28 @@ describe('growthVsPrev', () => {
     expect(computeVideoMetrics(untracked, ctx('age', null, now, makeIndex({ videos: [untracked] }), 7)).growthVsPrev).toMatchObject({ status: 'unavailable', note: 'no_window' });
   });
 
+  it('a video published inside the previous window has no growth (its "previous" is the publish ramp)', () => {
+    // Real example youtube:GP2L9avRBPc: published 1 minute before the previous day ended, first observed a day later
+    const exportAt = ts('2026-09-28T15:26Z');
+    const day = resolveWindow({ start: '2026-09-28', end: '2026-09-28' }, SEOUL, exportAt);
+    const artefact = makeVideo({ id: 'youtube:GP2L9avRBPc', publishedAt: ts('2026-09-27T14:58:53Z'), obs: [makeObs(ts('2026-09-28T15:13:23Z'), 6_613)] });
+    expect(growthVsPrevious(artefact, day, exportAt)).toEqual({ value: null, status: 'unavailable', asOf: null, note: 'published_in_previous_window' });
+    const real = makeVideo({
+      id: 'youtube:real',
+      publishedAt: ts('2026-09-01'),
+      obs: [makeObs(ts('2026-09-26T15:00Z'), 100_000), makeObs(ts('2026-09-27T15:00Z'), 200_000), makeObs(ts('2026-09-28T15:00Z'), 500_000)],
+    });
+    expect(growthVsPrevious(real, day, exportAt)).toMatchObject({ value: 2, status: 'exact' });
+    const r = queryVideos(makeIndex({ videos: [artefact, real], generatedAt: exportAt }), { dateMode: 'activity', range: { start: '2026-09-28', end: '2026-09-28' }, tz: SEOUL, sort: 'growth_vs_prev' });
+    expect(r.rows[0].video.id).toBe('youtube:real');
+    expect(r.notes.some((n) => n.includes('100회 미만') && n.includes('직전 기간 중에 게시'))).toBe(true);
+  });
+
+  it('a previous increase below 100 views gives no growth', () => {
+    const v = makeVideo({ publishedAt: ts('2026-08-01'), obs: [makeObs(at('2026-09-01'), 1000), makeObs(at('2026-09-08'), 1050), makeObs(at('2026-09-15'), 5000)] });
+    expect(computeVideoMetrics(v, ctx('activity', w, now, makeIndex({ videos: [v] }))).growthVsPrev).toMatchObject({ status: 'unavailable', note: 'previous_too_small' });
+  });
+
   it('an incomplete window is compared with the same elapsed span of the previous window', () => {
     const today = at('2026-09-11'); // 10 days into September
     const sep = resolveWindow({ start: '2026-09-01', end: '2026-09-30' }, SEOUL, today);
@@ -320,6 +432,16 @@ describe('engagementRate', () => {
     const v = makeVideo({ obs: [obsOf('2026-09-10', { views: 100, likes: 10 }), obsOf('2026-09-20', { views: 1000, likes: 10 })] });
     expect(engagementAt(v, ts('2026-09-15')).value).toBeCloseTo(0.1, 12);
     expect(engagementAt(v, ts('2026-09-25')).value).toBeCloseTo(0.01, 12);
+  });
+
+  it('niconico: on-video timeline comments are not engagement (likes / views only)', () => {
+    // Real example niconico:sm46818535: 2,458 views, 132 likes, 7,103 comments -> 294% if comments counted
+    const v = makeVideo({ id: 'niconico:sm46818535', obs: [obsOf(now - H, { views: 2_458, likes: 132, comments: 7_103 })] });
+    const e = engagementAt(v, now);
+    expect(e.value).toBeCloseTo(132 / 2_458, 12);
+    expect(e.components).toEqual(['likes']);
+    const commentsOnly = makeVideo({ id: 'niconico:sm2', obs: [obsOf(now - H, { views: 100, comments: 500 })] });
+    expect(engagementAt(commentsOnly, now)).toMatchObject({ status: 'unavailable', note: 'counter_not_provided' });
   });
 
   it('unavailable (not 0) when no component is provided; zero views is not divided', () => {

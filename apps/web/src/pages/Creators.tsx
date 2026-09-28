@@ -36,7 +36,7 @@ import {
 } from '../components/index.ts';
 import type { Column } from '../components/index.ts';
 import { useAnalysis, useDataset, useRangeParam, useUrlState } from '../data/hooks.ts';
-import { catLabel, fmtTime } from '../lib/display.ts';
+import { fmtTime } from '../lib/display.ts';
 import { formatInteger } from '../lib/format.ts';
 import { CROSS_PLATFORM_CAVEAT, orderPlatforms, platformLabel } from '../lib/platform.ts';
 import { tzShort } from '../lib/timezones.ts';
@@ -48,6 +48,7 @@ import {
   compareHref,
   creatorHref,
   creatorSortCodec,
+  effectiveCreatorSort,
   followersMetric,
   linkStatusOf,
   MAX_COMPARE,
@@ -55,9 +56,12 @@ import {
   platformsWithoutFollowers,
   statusCounts,
   toggleCompareKey,
+  windowBeforeCollection,
 } from '../features/creators/logic.ts';
 import type { CreatorSort } from '../features/creators/logic.ts';
-import { CreatorAvatar, DataStateNote, FollowersCell, LinkStatusBadge, PlatformStrip, portfolioAvatar } from '../features/creators/parts.tsx';
+import { CreatorAvatar, DataStateNote, FollowersCell, LinkStatusBadge, PlatformStrip, portfolioAvatar, PreCollectionCallout } from '../features/creators/parts.tsx';
+import { CREATORS_CSV_DATE_MODE, creatorCsvRows } from '../features/creators/csv.ts';
+import { dataReadiness } from '../features/trends/readiness.ts';
 
 const PAGE_SIZE = 50;
 
@@ -98,7 +102,15 @@ export default function CreatorsPage() {
     }
   }, [range, tz, now, rollingHours]);
 
-  const opts = useMemo(() => ({ range, rollingHours, tz, now, platforms, categories: cats, q, sort }), [range, rollingHours, tz, now, platforms, cats, q, sort]);
+  // A window that ends before the first observation cannot rank view / follower increases: sort by uploads.
+  const readiness = useMemo(() => dataReadiness(dataset), [dataset]);
+  const beforeCollection = windowState.window ? windowBeforeCollection(windowState.window, readiness.firstObservationAt, now) : false;
+  const appliedSort = effectiveCreatorSort(sort, beforeCollection);
+
+  const opts = useMemo(
+    () => ({ range, rollingHours, tz, now, platforms, categories: cats, q, sort: appliedSort }),
+    [range, rollingHours, tz, now, platforms, cats, q, appliedSort],
+  );
   const result = useAnalysis('summarizeCreators', opts, (index, o) => summarizeCreators(index, o));
   const rows = useMemo(() => (result.data ? (multi ? result.data.filter((s) => s.platforms.length > 1) : result.data) : undefined), [result.data, multi]);
 
@@ -112,7 +124,13 @@ export default function CreatorsPage() {
         description="여러 플랫폼 계정을 하나로 묶은 크리에이터 포트폴리오(연결되지 않은 계정은 단독). 모든 수치는 이 서비스가 추적하는 영상 기준이며 플랫폼 전체 집계가 아님."
         actions={
           <>
-            <ExportCsvButton filename="creators" getCsv={() => creatorsCsv(rows ?? [], now)} disabled={!rows?.length} />
+            <ExportCsvButton
+              filename="creators"
+              getCsv={() =>
+                toCsv(creatorCsvRows(rows ?? [], windowState.window ? { window: windowState.window, rollingHours, now, dateMode: CREATORS_CSV_DATE_MODE } : null))
+              }
+              disabled={!rows?.length}
+            />
             <Link
               to={compareHref(keys, linkParams)}
               className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[13px] font-medium text-on-accent hover:bg-accent-hover"
@@ -131,7 +149,7 @@ export default function CreatorsPage() {
         <Select<CreatorSort>
           label="정렬"
           hideLabel={false}
-          value={sort}
+          value={appliedSort}
           onChange={setSort}
           options={CREATOR_SORTS.map((s) => ({ value: s, label: CREATOR_SORT_LABELS[s] }))}
         />
@@ -153,6 +171,18 @@ export default function CreatorsPage() {
         </p>
       </FilterBar>
 
+      {beforeCollection ? (
+        <PreCollectionCallout
+          readiness={readiness}
+          rangeLabel={`${formatLocalRange(range)}, ${tzShort(tz)}`}
+          onRecent={() => setSpec('rolling7d')}
+        >
+          {sort !== appliedSort
+            ? `그래서 ${CREATOR_SORT_LABELS[sort]} 대신 기간 업로드(게시일 기준이라 알 수 있음) 순으로 정렬함.`
+            : '기간 업로드·팔로워·V7 순위는 게시일·최신 관측 기준이라 그대로 볼 수 있음.'}
+        </PreCollectionCallout>
+      ) : null}
+
       {windowState.error ? (
         <Card>
           <ErrorState title="기간을 계산하지 못함" error={windowState.error} />
@@ -168,7 +198,7 @@ export default function CreatorsPage() {
               <CreatorTable
                 rows={rows}
                 stale={result.isStale}
-                sort={sort}
+                sort={appliedSort}
                 onSort={setSort}
                 page={pageParam}
                 onPage={setPage}
@@ -472,54 +502,4 @@ function CompareTray({ keys, onKeys, href }: { keys: string[]; onKeys: (k: strin
       </div>
     </div>
   );
-}
-
-/* ------------------------------------------------------------------------------------------ csv */
-
-function creatorsCsv(rows: CreatorSummary[], now: number): string {
-  const header = [
-    'key',
-    '이름',
-    '유형',
-    '플랫폼',
-    '추적 영상',
-    '기간 업로드',
-    '기간 조회 증가',
-    '기간 조회 증가 상태',
-    '팔로워',
-    '팔로워 상태',
-    '팔로워 증가',
-    '팔로워 증가 상태',
-    '참여율',
-    '참여율 상태',
-    'V7 중앙값',
-    'V7 상태',
-    '주요 분야',
-    '협찬 영상',
-  ];
-  const out: (string | number | null)[][] = [header];
-  for (const s of rows) {
-    const f = followersMetric(s.accounts, now);
-    out.push([
-      s.key,
-      s.name,
-      s.kind === 'creator' ? '크리에이터' : '계정',
-      s.platforms.join('|'),
-      s.videoCount,
-      s.uploadsInWindow,
-      s.viewsInWindow.value,
-      s.viewsInWindow.status,
-      f.value,
-      f.status,
-      s.followersGrowth.value,
-      s.followersGrowth.status,
-      s.engagementRate.value,
-      s.engagementRate.status,
-      s.medianV7.value,
-      s.medianV7.status,
-      s.topCategories.map(catLabel).join('|'),
-      s.sponsoredCount,
-    ]);
-  }
-  return toCsv(out);
 }

@@ -213,10 +213,11 @@ describe('videoFacets', () => {
     expect(f.formats.find((o) => o.value === 'long')?.count).toBe(1);
   });
 
-  it('orders topics by count, knows when collection started and how many videos have a curve', () => {
+  it('orders topics by count and knows how many videos have a curve', () => {
     expect(f.topics.map((t) => t.topic)).toEqual(['뉴스', 'ytn']);
-    expect(f.collectionStart).toBe(3);
     expect(f.multiObserved).toBe(1);
+    // The collection start is not a facet: every page reads it from lib/collection.ts (one definition).
+    expect('collectionStart' in f).toBe(false);
   });
 
   it('is cached per videos array', () => {

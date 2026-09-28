@@ -1,9 +1,9 @@
 /**
- * Dashboard aggregations that are simple counts over the dataset (no metric math; the metric math lives in
- * @vti/core queryVideos / computeTrending). Pure functions: tested in dashboard.test.ts.
+ * Dashboard aggregations: simple counts over the dataset plus thin wrappers around @vti/core (the metric math
+ * lives in queryVideos / computeTrending). Pure functions: tested in dashboard.test.ts.
  */
-import { addDays, localDateOf } from '@vti/core';
-import type { CollectionRun, Dataset, LocalDateRange, Platform, SourceCoverage, Video } from '@vti/core';
+import { addDays, localDateOf, queryVideos, rankValue } from '@vti/core';
+import type { CollectionRun, Dataset, DatasetIndex, LocalDateRange, Platform, SourceCoverage, UtcWindow, Video, VideoQuery, VideoRow } from '@vti/core';
 import { orderPlatforms } from './platform.ts';
 import { topCategoryOf } from './display.ts';
 
@@ -51,13 +51,33 @@ export interface DashboardKpis {
   /** Distinct videos with at least one observation in the last 24h. */
   videosObservedLast24h: number;
   uploadsInWindow: number;
-  /** Uploads in the comparable previous window; null when that window has zero length. */
+  /** Uploads in the comparable previous window; null when that window has zero length or is not comparable. */
   uploadsPrevious: number | null;
-  /** uploadsInWindow / uploadsPrevious - 1; null when previous is 0 or unknown. */
+  /** uploadsInWindow / uploadsPrevious - 1; null when previous is 0, unknown or not comparable. */
   uploadsGrowth: number | null;
+  /**
+   * Whether the upload count can be compared with the previous window:
+   * - `ok`: both windows lie after the collection start (uploads were discovered live in both);
+   * - `before_collection`: the previous window starts before the collection start. Uploads from before we
+   *   started were only found by backfill (latest 15 per channel, "visited today" sorts...), so the older
+   *   window is under-sampled by construction and a growth figure would be a discovery artifact;
+   * - `none`: nothing to compare (zero-length previous window, e.g. before the window started).
+   */
+  uploadsComparison: 'ok' | 'before_collection' | 'none';
 }
 
-export function computeKpis(dataset: Dataset, opts: { now: number; window: Span; platforms?: Platform[] }): DashboardKpis {
+export interface KpiOptions {
+  now: number;
+  window: Span;
+  platforms?: Platform[];
+  /**
+   * When our collection started (lib/collection.ts). With it, the upload growth is only reported when the
+   * previous window starts after it; without it every previous window is treated as comparable.
+   */
+  collectionStartAt?: number | null;
+}
+
+export function computeKpis(dataset: Dataset, opts: KpiOptions): DashboardKpis {
   const { now, window } = opts;
   const videos = filterVideos(dataset.videos, opts.platforms);
   const platformSet = new Set<Platform>();
@@ -95,6 +115,9 @@ export function computeKpis(dataset: Dataset, opts: { now: number; window: Span;
     if (ps.size >= 2) multi++;
   }
   const prevLen = prev.endMs - prev.startMs;
+  const start = opts.collectionStartAt;
+  const comparison: DashboardKpis['uploadsComparison'] =
+    prevLen <= 0 ? 'none' : typeof start === 'number' && Number.isFinite(start) && prev.startMs < start ? 'before_collection' : 'ok';
   return {
     trackedVideos: videos.length,
     activeVideos: active,
@@ -105,8 +128,9 @@ export function computeKpis(dataset: Dataset, opts: { now: number; window: Span;
     observationsLast24h: obs24,
     videosObservedLast24h: observedVideos,
     uploadsInWindow: uploads,
-    uploadsPrevious: prevLen > 0 ? uploadsPrev : null,
-    uploadsGrowth: prevLen > 0 && uploadsPrev > 0 ? uploads / uploadsPrev - 1 : null,
+    uploadsPrevious: comparison === 'ok' ? uploadsPrev : null,
+    uploadsGrowth: comparison === 'ok' && uploadsPrev > 0 ? uploads / uploadsPrev - 1 : null,
+    uploadsComparison: comparison,
   };
 }
 
@@ -207,9 +231,14 @@ export interface FreshnessRow {
   requiresCredentials: boolean;
 }
 
-/** Freshness thresholds (hours since last successful run, relative to the dataset's now). */
+/** Freshness thresholds (hours since last successful run, relative to the reference instant). */
 export const FRESHNESS_HOURS = { ok: 12, late: 48 } as const;
 
+/**
+ * Per-source freshness relative to `now`. Pass the collection's `collectedUntil` (lib/collection.ts), not
+ * the data's generatedAt: a run can succeed after the newest observation (a round with 0 new points), and
+ * an age is never negative.
+ */
 export function sourceFreshness(coverage: SourceCoverage[], now: number): FreshnessRow[] {
   const rows = coverage.map((c): FreshnessRow => {
     const age = c.lastSuccessAt !== null ? Math.max(0, (now - c.lastSuccessAt) / HOUR_MS) : null;
@@ -240,7 +269,10 @@ export function sourceFreshness(coverage: SourceCoverage[], now: number): Freshn
   return rows;
 }
 
-/** Runs that started in (now - hours, now] with status error/partial. */
+/**
+ * Runs that started in (now - hours, now] and those with status error/partial. Pass the collection's
+ * `collectedUntil` (lib/collection.ts) as `now`: runs of the last round can start after the data's now.
+ */
 export function recentRunProblems(runs: CollectionRun[], now: number, hours = 24): { total: number; problems: number } {
   let total = 0;
   let problems = 0;
@@ -251,4 +283,46 @@ export function recentRunProblems(runs: CollectionRun[], now: number, hours = 24
     }
   }
   return { total, problems };
+}
+
+/* ------------------------------------------------------------------------------------------ top videos */
+
+export interface TopRanked {
+  /** Up to `limit` rows whose ranked metric has a value (never rows ranked only by the id tie-break). */
+  rows: VideoRow[];
+  /** Videos in scope (published before the window end, matching the filters). */
+  total: number;
+  /** Videos whose `viewsPeriod` can be ranked (exact / interpolated / lower bound / source reported). */
+  rankable: number;
+  window: UtcWindow | null;
+  notes: string[];
+}
+
+/**
+ * The top videos by period view increase (activity mode). queryVideos sorts unrankable values last and
+ * breaks ties by id, so when few values exist a plain `limit: 10` would fill the list with the lowest ids
+ * and a column of "—". Only rankable rows are kept; `rankable` says how many exist overall.
+ */
+export function topRankedVideos(index: DatasetIndex, q: VideoQuery, limit = 10): TopRanked {
+  const full = queryVideos(index, { ...q, sort: 'views_period', sortDir: 'desc', limit: undefined, offset: undefined });
+  let rankable = 0;
+  for (const r of full.rows) if (rankValue(r.metrics.viewsPeriod) !== null) rankable++;
+  // Rankable rows come first (desc sort puts nulls last).
+  return { rows: full.rows.slice(0, Math.min(limit, rankable)), total: full.total, rankable, window: full.window, notes: full.notes };
+}
+
+export type TopVideosEmptyReason =
+  /** The window ends before the first observation: no increase can be computed at all. */
+  | 'before_collection'
+  /** The window starts before the first observation / most videos have one observation. */
+  | 'short_history'
+  /** Enough history: nothing matches the filters or nothing gained views. */
+  | 'none';
+
+/** Why the top-videos list can be empty with the loaded data. */
+export function topVideosEmptyReason(window: Span, firstObservationAt: number | null, now: number): TopVideosEmptyReason {
+  if (firstObservationAt === null) return 'before_collection';
+  if (Math.min(window.endMs, now) <= firstObservationAt) return 'before_collection';
+  if (window.startMs < firstObservationAt) return 'short_history';
+  return 'none';
 }

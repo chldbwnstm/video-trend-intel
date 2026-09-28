@@ -19,7 +19,7 @@ import {
 } from '../../components/index.ts';
 import type { Column, Tone } from '../../components/index.ts';
 import { fmtTime } from '../../lib/display.ts';
-import { formatInteger, formatPercent, formatRelative } from '../../lib/format.ts';
+import { formatInteger, formatPercent } from '../../lib/format.ts';
 import { STATUS_META } from '../../lib/metricStatus.ts';
 import { platformLabel } from '../../lib/platform.ts';
 import { RANGE_PRESET_LABELS } from '../../lib/urlState.ts';
@@ -33,6 +33,7 @@ import {
   formatDurationKo,
   formatHoursKo,
   rankableShare,
+  relativeToDataNow,
   runDurationSec,
   STATUS_ORDER_FOR_BARS,
 } from './coverageModel.ts';
@@ -266,15 +267,32 @@ export function SourceTable({ rows, now }: { rows: SourceRow[]; now: number }) {
       hideBelow: 'sm',
       cell: (r) =>
         r.lastSuccessAt !== null ? (
-          <Tooltip content={`${fmtTime(r.lastSuccessAt, tz)} ${tzShort(tz)}`}>
-            <span className="text-xs text-fg-2 tabular">{formatRelative(r.lastSuccessAt, now)}</span>
-          </Tooltip>
+          <SuccessTime at={r.lastSuccessAt} now={now} row={r} tz={tz} />
         ) : (
           <span className="text-xs text-fg-3">없음</span>
         ),
     },
   ];
   return <DataTable columns={columns} rows={rows} rowKey={(r) => r.source} caption="원천별 수집 현황" minWidth="340px" />;
+}
+
+/** Last success relative to the data now; a run after the data now is labeled, not shown as "N분 후". */
+function SuccessTime({ at, now, row, tz }: { at: number; now: number; row: SourceRow; tz: string }) {
+  const l = relativeToDataNow(at, now, row.lastSuccessRun);
+  return (
+    <Tooltip content={`${fmtTime(at, tz)} ${tzShort(tz)}${l.hint ? ` · ${l.hint}` : ''}`}>
+      <span className="text-xs text-fg-2 tabular">
+        {l.text}
+        {l.note ? ` (${l.note})` : ''}
+      </span>
+    </Tooltip>
+  );
+}
+
+function SuccessRelative({ at, now, row }: { at: number; now: number; row: SourceRow }) {
+  const l = relativeToDataNow(at, now, row.lastSuccessRun);
+  const text = <span className="text-xs text-fg-3">({l.afterNow ? `${l.text}${l.note ? ` · ${l.note}` : ''}` : `${l.text}, 데이터 기준`})</span>;
+  return l.hint ? <Tooltip content={l.hint}>{text}</Tooltip> : text;
 }
 
 export function SourceCard({ row, now }: { row: SourceRow; now: number }) {
@@ -341,7 +359,7 @@ export function SourceCard({ row, now }: { row: SourceRow; now: number }) {
         <StatRow label="마지막 성공">
           {c.lastSuccessAt !== null ? (
             <>
-              {fmtTime(c.lastSuccessAt, tz)} {tzShort(tz)} <span className="text-xs text-fg-3">({formatRelative(c.lastSuccessAt, now)}, 데이터 기준)</span>
+              {fmtTime(c.lastSuccessAt, tz)} {tzShort(tz)} <SuccessRelative at={c.lastSuccessAt} now={now} row={row} />
             </>
           ) : (
             '없음'

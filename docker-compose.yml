@@ -6,6 +6,7 @@
 # ./data is shared with the host (the same data/store.sqlite and data/export the collector CLI uses).
 # Optional .env (see SPEC.md "Sources"): YOUTUBE_API_KEY, TIKTOK_CLIENT_KEY/SECRET, IG_ACCESS_TOKEN/IG_USER_ID,
 # X_BEARER_TOKEN, TWITCH_CLIENT_ID/SECRET, COLLECT_INTERVAL_MIN, RATE_LIMIT_PER_MIN, TRUST_PROXY, ...
+# (HEALTH_VERBOSE=1 makes /api/v1/health show container paths and raw errors: debugging only, never when public.)
 # Explicit project name: the repository folder name is not ASCII, so Compose cannot derive one from it.
 name: video-trend-intel
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { buildIndex } from '@vti/core';
 import type { CollectionRun, SourceCoverage } from '@vti/core';
 import { makeAccount, makeDataset, makeObs, makeVideo, ts } from '../../../../packages/core/test/fixtures.ts';
+import { collectionTimeline } from './collection.ts';
+import { formatAgo } from './format.ts';
 import {
   categorySplit,
   comparablePrevious,
@@ -13,6 +16,8 @@ import {
   platformSplit,
   recentRunProblems,
   sourceFreshness,
+  topRankedVideos,
+  topVideosEmptyReason,
   UNCATEGORIZED,
   videosUploadedIn,
 } from './dashboard.ts';
@@ -129,6 +134,72 @@ describe('computeKpis', () => {
     expect(k.trackedVideos).toBe(0);
     expect(k.platforms).toEqual([]);
     expect(k.uploadsGrowth).toBeNull();
+  });
+  it('does not compare uploads with a previous window that starts before the collection started', () => {
+    // Collection started 09-20: the previous week (from 09-14) was only backfilled -> discovery artifact.
+    const k = computeKpis(fixture(), { now: NOW, window: WEEK, collectionStartAt: ts('2026-09-20T00:00:00Z') });
+    expect(k.uploadsInWindow).toBe(2);
+    expect(k.uploadsComparison).toBe('before_collection');
+    expect(k.uploadsGrowth).toBeNull();
+    expect(k.uploadsPrevious).toBeNull();
+  });
+  it('compares uploads once both windows lie after the collection start', () => {
+    const k = computeKpis(fixture(), { now: NOW, window: WEEK, collectionStartAt: ts('2026-09-01T00:00:00Z') });
+    expect(k.uploadsComparison).toBe('ok');
+    expect(k.uploadsPrevious).toBe(1);
+    expect(k.uploadsGrowth).toBeCloseTo(1);
+  });
+  it('reports nothing to compare before the window started', () => {
+    const k = computeKpis(fixture(), { now: WEEK.startMs - HOUR_MS, window: WEEK, collectionStartAt: ts('2026-09-01T00:00:00Z') });
+    expect(k.uploadsComparison).toBe('none');
+    expect(k.uploadsGrowth).toBeNull();
+  });
+});
+
+describe('topRankedVideos', () => {
+  // Two videos with a computable increase in the window, two whose increase is unknown (one observation).
+  function ds() {
+    return makeDataset({
+      generatedAt: NOW,
+      videos: [
+        makeVideo({ id: 'youtube:a', publishedAt: ts('2026-09-01T00:00:00Z'), obs: [makeObs('2026-09-26T00:00:00Z', 100), makeObs('2026-09-28T00:00:00Z', 900)] }),
+        makeVideo({ id: 'youtube:b', publishedAt: ts('2026-09-01T00:00:00Z'), obs: [makeObs('2026-09-26T00:00:00Z', 100), makeObs('2026-09-28T00:00:00Z', 300)] }),
+        makeVideo({ id: 'youtube:0', publishedAt: ts('2026-09-01T00:00:00Z'), obs: [makeObs('2026-09-28T00:00:00Z', 5_000_000)] }),
+        makeVideo({ id: 'youtube:1', publishedAt: ts('2026-09-01T00:00:00Z'), obs: [makeObs('2026-09-28T00:00:00Z', 7)] }),
+      ],
+    });
+  }
+  const q = { dateMode: 'activity' as const, range: { start: '2026-09-27', end: '2026-09-28' }, rollingHours: 48, tz: 'Asia/Seoul', sort: 'views_period' as const, now: NOW };
+
+  it('keeps only rows whose period increase can be ranked, in rank order', () => {
+    const r = topRankedVideos(buildIndex(ds()), q, 10);
+    expect(r.total).toBe(4);
+    expect(r.rankable).toBe(2);
+    expect(r.rows.map((x) => x.video.id)).toEqual(['youtube:a', 'youtube:b']);
+  });
+  it('never fills the list with unrankable rows ordered by id', () => {
+    const only = makeDataset({ generatedAt: NOW, videos: ds().videos.filter((v) => v.obs.length === 1) });
+    const r = topRankedVideos(buildIndex(only), q, 10);
+    expect(r.total).toBe(2);
+    expect(r.rankable).toBe(0);
+    expect(r.rows).toEqual([]);
+  });
+  it('respects the limit', () => {
+    expect(topRankedVideos(buildIndex(ds()), q, 1).rows.map((x) => x.video.id)).toEqual(['youtube:a']);
+  });
+});
+
+describe('topVideosEmptyReason', () => {
+  const first = ts('2026-09-28T15:13:00Z');
+  it('explains windows that end before the first observation', () => {
+    expect(topVideosEmptyReason({ startMs: ts('2026-08-01'), endMs: ts('2026-09-01') }, first, first + DAY_MS)).toBe('before_collection');
+    expect(topVideosEmptyReason({ startMs: ts('2026-08-01'), endMs: ts('2026-09-01') }, null, first)).toBe('before_collection');
+  });
+  it('explains windows that start before it', () => {
+    expect(topVideosEmptyReason({ startMs: first - 7 * DAY_MS, endMs: first + HOUR_MS }, first, first + HOUR_MS)).toBe('short_history');
+  });
+  it('has no special reason once the window lies after it', () => {
+    expect(topVideosEmptyReason({ startMs: first + HOUR_MS, endMs: first + DAY_MS }, first, first + DAY_MS)).toBe('none');
   });
 });
 
@@ -253,5 +324,35 @@ describe('recentRunProblems', () => {
     });
     const out = recentRunProblems([run(NOW - HOUR_MS, 'ok'), run(NOW - 2 * HOUR_MS, 'partial'), run(NOW - 30 * HOUR_MS, 'error'), run(NOW + HOUR_MS, 'error')], NOW);
     expect(out).toEqual({ total: 2, problems: 1 });
+  });
+});
+
+describe('freshness against the last collector activity (live export shape)', () => {
+  // generatedAt = newest observation (15:26:16Z); the peertube / niconico runs of the second round (0 new
+  // points) start and finish after it.
+  const generatedAt = ts('2026-09-28T15:26:16Z');
+  const runs: CollectionRun[] = [
+    ['youtube-rss', '2026-09-28T15:13:23Z', '2026-09-28T15:16:38Z'],
+    ['dailymotion', '2026-09-28T15:16:38Z', '2026-09-28T15:18:34Z'],
+    ['peertube', '2026-09-28T15:18:34Z', '2026-09-28T15:18:48Z'],
+    ['niconico', '2026-09-28T15:18:48Z', '2026-09-28T15:19:15Z'],
+    ['youtube-rss', '2026-09-28T15:23:00Z', '2026-09-28T15:26:16Z'],
+    ['dailymotion', '2026-09-28T15:26:16Z', '2026-09-28T15:27:57Z'],
+    ['peertube', '2026-09-28T15:27:57Z', '2026-09-28T15:28:11Z'],
+    ['niconico', '2026-09-28T15:28:11Z', '2026-09-28T15:28:38Z'],
+  ].map(([source, s, f]) => ({ id: `${source}-${s}`, source, startedAt: ts(s), finishedAt: ts(f), status: 'ok' as const, videosSeen: 0, videosNew: 0, observations: 0, requests: 0, errors: [] }));
+  const coverage = [cov({ source: 'peertube', platform: 'peertube', lastSuccessAt: ts('2026-09-28T15:27:57Z'), lastRunAt: ts('2026-09-28T15:27:57Z') })];
+  const ds = makeDataset({ generatedAt, runs, coverage });
+  const ref = collectionTimeline(ds).collectedUntil;
+
+  it('counts every run of the last 24 hours', () => {
+    expect(recentRunProblems(ds.runs, generatedAt).total).toBe(6); // the old behaviour (bug)
+    expect(recentRunProblems(ds.runs, ref).total).toBe(8);
+  });
+  it('never reports a last success in the future', () => {
+    const [row] = sourceFreshness(ds.coverage, ref);
+    expect(row.ageHours).toBeGreaterThanOrEqual(0);
+    expect(formatAgo(row.lastSuccessAt, ref)).toBe('방금');
+    expect(formatAgo(row.lastSuccessAt, generatedAt)).not.toContain('후');
   });
 });

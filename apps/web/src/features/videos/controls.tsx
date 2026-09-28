@@ -8,7 +8,9 @@ import type { ReactNode } from 'react';
 import type { AgeDays, DateMode, SortKey } from '@vti/core';
 import { ArrowDownWideNarrow, ArrowUpNarrowWide, Check, Link2 } from 'lucide-react';
 import { Button } from '../../components/index.ts';
+import { useTz } from '../../data/hooks.ts';
 import { cx } from '../../lib/cx.ts';
+import { shareableHref } from '../../lib/urlState.ts';
 import { SORT_MENU, sortLabel, sortUnavailableReason } from './model.ts';
 
 const SELECT_CLASS =
@@ -140,8 +142,12 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** Copies the current URL (filters, sort, page and open video are all in it). */
+/**
+ * Copies the current URL (filters, sort, page and open video are all in it) with the display time zone made
+ * explicit (`tz`), so a recipient whose stored zone differs resolves the same local-date windows.
+ */
 export function CopyLinkButton({ size = 'sm' }: { size?: 'sm' | 'md' }) {
+  const tz = useTz();
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -152,9 +158,9 @@ export function CopyLinkButton({ size = 'sm' }: { size?: 'sm' | 'md' }) {
       <Button
         size={size}
         icon={state === 'copied' ? <Check className="size-3.5" aria-hidden /> : <Link2 className="size-3.5" aria-hidden />}
-        title="현재 필터·정렬·기간이 담긴 링크를 복사"
+        title="현재 필터·정렬·기간·시간대가 담긴 링크를 복사"
         onClick={async () => {
-          const ok = await copyText(window.location.href);
+          const ok = await copyText(shareableHref(window.location.href, tz));
           setState(ok ? 'copied' : 'failed');
           if (timer.current) clearTimeout(timer.current);
           timer.current = setTimeout(() => setState('idle'), 2500);

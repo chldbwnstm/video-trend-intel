@@ -11,7 +11,8 @@
  * Discovery: GET /api/v2/snapshot/video/contents/search with q / targets / fields / _sort / _offset / _limit
  * (≤ 100) / filters[startTime][gte] / _context=VideoTrendIntel.
  * Refresh (verified 2026-09-28): `q=` (empty) + `targets=title` + `filters[contentId][0..99]=<id>` returns the
- * listed videos (100 ids per request). Ids absent from the snapshot are reported as gone with status `unknown`
+ * listed videos (100 ids per request). The whole due list comes in priority order (ids discovery returned are
+ * skipped); batches stop at the request budget and the rest stays due for the next run. Ids absent from the snapshot are reported as gone with status `unknown`
  * (deleted, made private or otherwise withdrawn; the snapshot does not say which).
  *
  * Accounts: only the numeric userId / channelId are available without unofficial APIs, so accounts are
@@ -24,6 +25,7 @@ import {
   USER_AGENT,
   chunk,
   cleanDescription,
+  decodeEntities,
   detectLanguage,
   errorJson,
   errorMessage,
@@ -134,11 +136,20 @@ export function niconicoAccount(v: NnVideo): RawAccount | null {
   return null;
 }
 
-/** Tags come as one space-separated string (or occasionally an array). */
+/**
+ * Tags come as one space-separated string (or occasionally an array). Like titles they are HTML-escaped by the API
+ * (`zebra coffee &amp; croissant`), so entities are decoded once.
+ */
 export function niconicoTags(v: unknown): string[] {
-  if (Array.isArray(v)) return uniqueStrings(v);
-  if (typeof v === 'string') return uniqueStrings(v.split(/[ 　]+/));
+  if (Array.isArray(v)) return uniqueStrings(v.map((t) => (typeof t === 'string' ? decodeEntities(t) : t)));
+  if (typeof v === 'string') return uniqueStrings(v.split(/[ 　]+/).map(decodeEntities));
   return [];
+}
+
+/** Title with the API's HTML escaping (`&quot;`, `&amp;`) decoded once. */
+export function niconicoTitle(v: unknown): string {
+  const t = str(v);
+  return t ? (str(decodeEntities(t)) ?? '') : '';
 }
 
 export function niconicoToRawVideo(v: NnVideo, observedAt: number, discoveredVia: string): RawVideo | null {
@@ -146,7 +157,7 @@ export function niconicoToRawVideo(v: NnVideo, observedAt: number, discoveredVia
   const publishedAt = parseTime(v.startTime);
   const account = niconicoAccount(v);
   if (!contentId || publishedAt == null || !account) return null;
-  const title = str(v.title) ?? '';
+  const title = niconicoTitle(v.title);
   const rawDescription = typeof v.description === 'string' ? v.description : null;
   const description = cleanDescription(rawDescription, { html: true });
   const tags = niconicoTags(v.tags);
@@ -294,8 +305,9 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
   for (let bi = 0; bi < batches.length; bi++) {
     const ids = batches[bi];
     if (!canRequest()) {
+      // Budget-bound refresh: the rest stays due and goes first next run (the pipeline notes how many).
       const left = batches.slice(bi).reduce((n, b) => n + b.length, 0);
-      errors.push(`요청 한도(maxRequests=${ctx.maxRequests}) 도달: 갱신 대상 ${left}개 미갱신`);
+      ctx.log?.info?.(`[${ID}] request budget reached: ${left} due id(s) left for the next run`);
       break;
     }
     let body: NnResponse;
@@ -357,6 +369,8 @@ export const niconico: SourceAdapter = {
     '언어는 제목·설명·태그의 문자(가나→ja, 한글→ko)로 추정한 값(검출)입니다. 국가 정보는 제공되지 않습니다. 분야는 niconico 장르(예: niconico:ゲーム)입니다.',
     '형식: 길이 60초 이하 short, 그 외 long.',
     '스냅샷에서 사라진 추적 영상은 삭제·비공개 여부를 구분할 수 없어 상태 미상(unknown)으로 기록합니다.',
+    '제목·태그는 API가 HTML 이스케이프(&quot; &amp;)해서 돌려주므로 한 번 복원해 저장합니다.',
+    '이미 수집한 최신 스냅샷보다 새 스냅샷이 나오기 전에는 같은 영상을 다시 요청하지 않습니다(같은 스냅샷을 다시 받아도 새 정보가 없음).',
   ],
   docsUrl: 'https://site.nicovideo.jp/search-api-docs/snapshot',
   version: 1,

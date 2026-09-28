@@ -13,17 +13,19 @@
  *   COLLECT_SOURCES (comma list of adapter ids; default all) · COLLECT_MAX_REQUESTS (per-source cap override)
  *   EXPORT_BUDGET_MB (collector default) · RATE_LIMIT_PER_MIN (120; 0 disables) · TRUST_PROXY (0/1)
  *   WATCH_POLL_SEC (30)
+ *   HEALTH_VERBOSE (0/1: /api/v1/health also shows filesystem paths and raw load/collection errors. Off by
+ *     default because the endpoint is public — CORS *, no auth, exempt from the rate limit)
  */
 import { existsSync, mkdirSync, realpathSync, watch, type FSWatcher } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { serve } from '@hono/node-server';
 import { buildIndex, decodeDataset } from '@vti/core';
 import type { CompactDataset, DatasetIndex } from '@vti/core';
 import { ADAPTERS, createLogger } from '@vti/collector';
 import { createApp, type AppLogger } from './app.ts';
-import { Scheduler, createCollectJob } from './scheduler.ts';
+import { Scheduler, createCollectJob, type SchedulerStatus } from './scheduler.ts';
 
 export const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -50,6 +52,8 @@ export interface ServerConfig {
   rateLimitPerMin: number;
   trustProxy: boolean;
   pollSec: number;
+  /** HEALTH_VERBOSE: include filesystem paths and raw errors in /api/v1/health. */
+  healthVerbose: boolean;
 }
 
 function num(env: Record<string, string | undefined>, key: string, fallback: number, min = 0): number {
@@ -95,6 +99,7 @@ export function configFromEnv(env: Record<string, string | undefined> = process.
     rateLimitPerMin: num(env, 'RATE_LIMIT_PER_MIN', 120, 0),
     trustProxy: bool(env, 'TRUST_PROXY'),
     pollSec: num(env, 'WATCH_POLL_SEC', 30, 1),
+    healthVerbose: bool(env, 'HEALTH_VERBOSE'),
   };
 }
 
@@ -125,11 +130,35 @@ export async function loadDatasetFile(path: string): Promise<LoadedData> {
   return { index, raw, path, mtimeMs: st.mtimeMs, size: st.size, loadedAt: Date.now(), loadMs: Math.round(performance.now() - t0) };
 }
 
+/** Public stand-in for a raw load error (the full text, with the file path, is in the server log). */
+export const LOAD_ERROR_PUBLIC = '데이터셋 파일을 읽지 못해 이전 데이터셋을 유지하고 있습니다. 자세한 내용은 서버 로그를 확인하세요.';
+
+export interface DatasetLoaderStatus {
+  /** File name of the loaded dataset (never the directory). */
+  file: string | null;
+  fromExport: boolean;
+  loadedAt: number | null;
+  generatedAt: number | null;
+  bytes: number | null;
+  loadMs: number | null;
+  loads: number;
+  failures: number;
+  /** null after a successful load; otherwise LOAD_ERROR_PUBLIC, or the raw `<path>: <message>` when verbose. */
+  lastError: string | null;
+  lastErrorAt: number | null;
+  watching: boolean;
+  /** Verbose only: absolute path of the loaded file and the watched export dir. */
+  path?: string | null;
+  exportDir?: string;
+}
+
 export class DatasetLoader {
   current: LoadedData | null = null;
   loads = 0;
   failures = 0;
+  /** Raw diagnostic (`<path>: <message>`); logged, and exposed by status() only when verbose. */
   lastError: string | null = null;
+  lastErrorAt: number | null = null;
   private watcher: FSWatcher | null = null;
   private poll: ReturnType<typeof setInterval> | null = null;
   private debounce: ReturnType<typeof setTimeout> | null = null;
@@ -158,6 +187,7 @@ export class DatasetLoader {
       this.current = data;
       this.loads++;
       this.lastError = null;
+      this.lastErrorAt = null;
       const ds = data.index.dataset;
       const back = prev && ds.generatedAt < prev.index.dataset.generatedAt ? ' (older than the previous dataset!)' : '';
       this.log.info(
@@ -167,6 +197,7 @@ export class DatasetLoader {
     } catch (err) {
       this.failures++;
       this.lastError = `${path}: ${err instanceof Error ? err.message : String(err)}`;
+      this.lastErrorAt = Date.now();
       this.log.error(`dataset load failed (keeping the previous one): ${this.lastError}`);
       return false;
     }
@@ -246,10 +277,15 @@ export class DatasetLoader {
     this.debounce = null;
   }
 
-  status() {
+  /**
+   * Loader state for /api/v1/health. That endpoint is public (CORS *, no auth, rate-limit exempt), so by default
+   * nothing about the host filesystem leaves the process: the file name instead of its path, and a generic
+   * lastError (paths and raw error text stay in the server log). `verbose` (HEALTH_VERBOSE=1) adds them back.
+   */
+  status(verbose = false): DatasetLoaderStatus {
     const c = this.current;
     return {
-      path: c?.path ?? null,
+      file: c ? basename(c.path) : null,
       fromExport: c ? c.path === this.exportPath : false,
       loadedAt: c?.loadedAt ?? null,
       generatedAt: c?.index.dataset.generatedAt ?? null,
@@ -257,10 +293,20 @@ export class DatasetLoader {
       loadMs: c?.loadMs ?? null,
       loads: this.loads,
       failures: this.failures,
-      lastError: this.lastError,
+      lastError: this.lastError === null ? null : verbose ? this.lastError : LOAD_ERROR_PUBLIC,
+      lastErrorAt: this.lastErrorAt,
       watching: this.watcher !== null,
+      ...(verbose ? { path: c?.path ?? null, exportDir: this.exportDir } : {}),
     };
   }
+}
+
+/** The loader + scheduler part of /api/v1/health (public-safe unless `verbose`). */
+export function serverStatus(loader: DatasetLoader, scheduler: Scheduler | null, verbose = false): { loader: DatasetLoaderStatus; scheduler: SchedulerStatus | { enabled: false; intervalMin: 0 } } {
+  return {
+    loader: loader.status(verbose),
+    scheduler: scheduler ? scheduler.status(verbose) : { enabled: false, intervalMin: 0 },
+  };
 }
 
 /* ------------------------------------------------------------------------------------------
@@ -328,8 +374,9 @@ export async function main(env: Record<string, string | undefined> = process.env
     rateLimit: cfg.rateLimitPerMin > 0 ? { perMinute: cfg.rateLimitPerMin } : false,
     trustProxy: cfg.trustProxy,
     log,
-    getStatus: () => ({ loader: loader.status(), scheduler: scheduler ? scheduler.status() : { enabled: false, intervalMin: 0 } }),
+    getStatus: () => serverStatus(loader, scheduler, cfg.healthVerbose),
   });
+  if (cfg.healthVerbose) log.warn('HEALTH_VERBOSE=1: /api/v1/health shows filesystem paths and raw errors to anyone who can reach this server');
   if (!existsSync(cfg.webDistDir)) log.warn(`web build not found at ${cfg.webDistDir} (run \`npm run build\`); serving the API only`);
 
   const server = serve({ fetch: app.fetch, port: cfg.port, hostname: cfg.host }, (info) => {

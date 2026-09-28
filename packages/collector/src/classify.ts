@@ -29,7 +29,13 @@ export interface ClassifyStoredResult {
 }
 
 /** Classify one stored video (pure: no store access). */
-export function classifyStoredVideo(v: Pick<StoredVideo, 'title' | 'description' | 'tags' | 'sourceCategory' | 'language'>, accountSeedCategory: string | null) {
+export function classifyStoredVideo(
+  v: Pick<StoredVideo, 'title' | 'description' | 'tags' | 'sourceCategory' | 'language'>,
+  accountSeedCategory: string | null,
+  account: { name?: string | null; handle?: string | null } = {},
+) {
+  const accountName = account.name ?? null;
+  const accountHandle = account.handle ?? null;
   const { categories, topics } = classifyVideo({
     title: v.title,
     description: v.description,
@@ -37,8 +43,11 @@ export function classifyStoredVideo(v: Pick<StoredVideo, 'title' | 'description'
     sourceCategory: v.sourceCategory,
     accountSeedCategory,
     language: v.language,
+    accountName,
+    accountHandle,
   });
-  const sponsorship = detectSponsorship({ title: v.title, description: v.description, tags: v.tags });
+  // The uploader's own name is neither a topic nor a sponsor.
+  const sponsorship = detectSponsorship({ title: v.title, description: v.description, tags: v.tags, accountName, accountHandle });
   return { categories, topics, sponsorship };
 }
 
@@ -54,7 +63,7 @@ export function classifyStoredVideos(store: Store, opts: ClassifyStoredOptions =
   store.transaction(() => {
     for (const v of pending) {
       try {
-        const c = classifyStoredVideo(v, v.accountSeedCategory);
+        const c = classifyStoredVideo(v, v.accountSeedCategory, { name: v.accountName, handle: v.accountHandle });
         store.setClassification(
           v.id,
           {

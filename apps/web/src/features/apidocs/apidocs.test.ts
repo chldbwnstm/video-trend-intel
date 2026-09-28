@@ -10,7 +10,7 @@ import { DatasetContext } from '../../data/context.ts';
 import type { DatasetContextValue } from '../../data/context.ts';
 import { generateSampleDataset } from '../../../scripts/sample-generator.ts';
 import ApiDocsPage from '../../pages/ApiDocs.tsx';
-import { API_PREFIX, curlCommand, ENDPOINTS, LIVE_STATIC_API, LOCAL_SERVER, STATIC_FILES, liveStaticUrl } from './apiSpec.ts';
+import { API_PREFIX, curlCommand, ENDPOINTS, LIVE_STATIC_API, LOCAL_SERVER, SERVER_MARKER_HEADER, STATIC_FILES, liveStaticUrl, shouldProbeServer } from './apiSpec.ts';
 import { CodeBlock } from './ApiDocsParts.tsx';
 
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ');
@@ -56,6 +56,16 @@ describe('API spec', () => {
       expect(url.href.startsWith(LIVE_STATIC_API)).toBe(true);
       expect(url.pathname.endsWith('.json')).toBe(true);
     }
+  });
+
+  it('probes /health only when the site may run apps/server (no 404 on static hosting)', () => {
+    // Static hosting (GitHub Pages): index.json is a plain file -> skip /health.
+    expect(shouldProbeServer({ ok: true, fromServer: false })).toBe(false);
+    // apps/server answers index.json live (marker header) -> check /health for its status.
+    expect(shouldProbeServer({ ok: true, fromServer: true })).toBe(true);
+    // No static index (dev server, server without a dataset yet) -> /health tells what is there.
+    expect(shouldProbeServer({ ok: false, fromServer: false })).toBe(true);
+    expect(SERVER_MARKER_HEADER).toBe('x-data-generated-at');
   });
 
   it('quotes URLs safely in curl commands', () => {

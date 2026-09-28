@@ -7,23 +7,41 @@
  * - Observations are stamped `src = '<adapterId>@<version>'` and `t = RawVideo.observedAt` (NOT fetch time for
  *   snapshot sources such as niconico).
  * - Secrets (credential env values, secret URL parameters) are redacted from every stored error message.
+ * - Adapter output is untrusted: URLs must be http(s) (anything else, e.g. `javascript:`, is dropped), titles and
+ *   tag lists are bounded, promotional spam (gambling / sex-trade / loan ads, see spam.ts) is not stored, and a
+ *   video returned without any counter only updates its metadata (no empty observation). Each is noted per run.
+ * - Refresh coverage: after each adapter the pipeline counts how many due videos were actually re-observed (by the
+ *   adapter's refresh or its discovery) and notes the rest, instead of trusting the pre-run selection.
  */
 import type { Platform, SourceWindowMetric, VideoStatus } from '@vti/core';
 import { ADAPTERS } from './sources/index.ts';
 import type { CollectContext, CollectLogger, CollectResult, HttpClient, RawAccount, RawVideo, Seeds, SourceAdapter } from './types.ts';
 import { createHttpClient, HostRateLimiter, redactUrl, type HttpClientOptions } from './http.ts';
 import { classifyStoredVideos, type ClassifyStoredResult } from './classify.ts';
-import { selectRefreshIds, type RefreshSelection } from './refresh.ts';
+import { countObservedDue, refreshCoverageNote, selectRefreshIds, type RefreshSelection } from './refresh.ts';
+import { promoSpamReason } from './spam.ts';
+import { safeHttpUrl } from './sources/util.ts';
 import { creatorsFromSeeds, DEFAULT_SEEDS_DIR, loadSeedsDetailed, SEED_FILES } from './seeds.ts';
 import { openStore, videoIdOf, type Store } from './store.ts';
 import { buildDataset, writeExport, type BuildDatasetOptions, type WriteExportResult } from './export.ts';
 import { silentLogger } from './log.ts';
 
 export const DEFAULT_MAX_REQUESTS = 500;
-/** Per-source defaults that differ from DEFAULT_MAX_REQUESTS (youtube-rss spends 1 request per seed channel). */
-export const DEFAULT_MAX_REQUESTS_BY_SOURCE: Readonly<Record<string, number>> = { 'youtube-rss': 1000 };
-/** Wall-clock limit for one adapter's collect() (its HTTP client is closed afterwards). */
-export const DEFAULT_ADAPTER_TIMEOUT_MS = 45 * 60_000;
+/**
+ * Per-source defaults that differ from DEFAULT_MAX_REQUESTS (youtube-rss spends 1 request per seed channel plus
+ * 2 per fast channel for its long-form / Shorts playlist feeds).
+ */
+export const DEFAULT_MAX_REQUESTS_BY_SOURCE: Readonly<Record<string, number>> = { 'youtube-rss': 1500, peertube: 250 };
+/**
+ * Wall-clock limit for one adapter's collect() (its HTTP client is closed afterwards). Override with
+ * `adapterTimeoutMs` or env COLLECT_ADAPTER_TIMEOUT_MIN; it must stay well below any outer limit (the CI step
+ * allows the keyless adapters 12 min each) so one hanging source cannot take the whole run down.
+ */
+export const DEFAULT_ADAPTER_TIMEOUT_MS = 20 * 60_000;
+/** Adapter output bounds (untrusted instances can send anything). */
+export const TITLE_MAX_CHARS = 500;
+export const TAGS_MAX = 50;
+export const TAG_MAX_CHARS = 100;
 /** Observations stamped further in the future than this (vs. the run clock) are rejected. */
 const FUTURE_TOLERANCE_MS = 10 * 60_000;
 
@@ -42,7 +60,8 @@ export interface SourceRunSummary {
   accountsSeen: number;
   gone: number;
   requests: number;
-  refresh: { requested: number; due: number; skipped: number };
+  /** requested: ids handed to the adapter; due: due candidates; skipped: cut before the run; observed: due videos re-observed. */
+  refresh: { requested: number; due: number; skipped: number; observed: number };
   errors: string[];
   notes: string[];
 }
@@ -80,6 +99,7 @@ export interface RunCollectionOptions {
   /** Factory override for the per-adapter HTTP client. */
   createHttp?: (adapter: SourceAdapter, limiter: HostRateLimiter) => HttpClient;
   refreshCaps?: Record<string, number>;
+  /** Default: env COLLECT_ADAPTER_TIMEOUT_MIN, else DEFAULT_ADAPTER_TIMEOUT_MS. */
   adapterTimeoutMs?: number;
   /** Classify new/changed videos after collection (default true). */
   classify?: boolean;
@@ -111,6 +131,14 @@ export function redactSecrets(text: string, env: Record<string, string | undefin
 function runIdFor(source: string, startedAt: number): string {
   const stamp = new Date(startedAt).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   return `run-${source}-${stamp}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Adapter time limit from env COLLECT_ADAPTER_TIMEOUT_MIN (minutes, > 0), else undefined. */
+export function adapterTimeoutFromEnv(env: Record<string, string | undefined>): number | undefined {
+  const raw = env.COLLECT_ADAPTER_TIMEOUT_MIN?.trim();
+  if (!raw) return undefined;
+  const min = Number(raw);
+  return Number.isFinite(min) && min > 0 ? Math.round(min * 60_000) : undefined;
 }
 
 function maxRequestsFor(source: string, opt: RunCollectionOptions['maxRequestsPerSource']): number {
@@ -176,6 +204,44 @@ function invalidAccountReason(a: RawAccount, platform: Platform): string | null 
   return null;
 }
 
+function clipChars(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const chars = Array.from(s);
+  return chars.length <= max ? s : chars.slice(0, max).join('');
+}
+
+interface SanitizeTally {
+  urls: number;
+  clipped: number;
+}
+
+/** http(s)-only URLs (others dropped) for an account from adapter output. */
+function sanitizeAccount(a: RawAccount, tally: SanitizeTally): RawAccount {
+  const url = safeHttpUrl(a.url);
+  const avatar = safeHttpUrl(a.avatar);
+  if (url === null && typeof a.url === 'string' && a.url.trim()) tally.urls++;
+  if (avatar === null && typeof a.avatar === 'string' && a.avatar.trim()) tally.urls++;
+  return { ...a, url: url ?? '', avatar };
+}
+
+/** http(s)-only URLs, bounded title (TITLE_MAX_CHARS) and tags (TAGS_MAX x TAG_MAX_CHARS). */
+function sanitizeVideo(v: RawVideo, tally: SanitizeTally): RawVideo {
+  const url = safeHttpUrl(v.url);
+  const thumbnail = safeHttpUrl(v.thumbnail);
+  if (url === null && typeof v.url === 'string' && v.url.trim()) tally.urls++;
+  if (thumbnail === null && typeof v.thumbnail === 'string' && v.thumbnail.trim()) tally.urls++;
+  const rawTitle = typeof v.title === 'string' ? v.title : '';
+  const title = clipChars(rawTitle, TITLE_MAX_CHARS);
+  const rawTags = Array.isArray(v.tags) ? v.tags.filter((t): t is string => typeof t === 'string') : [];
+  const tags = rawTags.slice(0, TAGS_MAX).map((t) => clipChars(t, TAG_MAX_CHARS));
+  if (title !== rawTitle || rawTags.length > TAGS_MAX || tags.some((t, i) => t !== rawTags[i])) tally.clipped++;
+  return { ...v, url: url ?? '', thumbnail, title, tags, account: sanitizeAccount(v.account, tally) };
+}
+
+function hasAnyCounter(c: RawVideo['counters'] | undefined): boolean {
+  return !!c && (c.views != null || c.likes != null || c.comments != null || c.shares != null);
+}
+
 /** Merge two sightings of the same account within one result: later non-null values win. */
 function mergeRawAccount(a: RawAccount, b: RawAccount): RawAccount {
   return {
@@ -197,22 +263,41 @@ interface PersistStats {
   observations: number;
   accountsSeen: number;
   gone: number;
+  /** Videos rejected as promotional spam (not stored). */
+  spam: number;
   errors: string[];
+  /** Korean notes for the run (sanitized URLs, spam, metadata-only videos). */
+  notes: string[];
 }
 
 /** Write one adapter result to the store in a single transaction. */
 export function persistResult(store: Store, adapter: Pick<SourceAdapter, 'id' | 'platform' | 'version'>, result: CollectResult, now: number): PersistStats {
   const src = `${adapter.id}@${adapter.version}`;
-  const stats: PersistStats = { videosSeen: 0, videosNew: 0, observations: 0, accountsSeen: 0, gone: 0, errors: [] };
+  const stats: PersistStats = { videosSeen: 0, videosNew: 0, observations: 0, accountsSeen: 0, gone: 0, spam: 0, errors: [], notes: [] };
   const badVideos: InvalidTally = { count: 0, examples: [] };
   const badAccounts: InvalidTally = { count: 0, examples: [] };
+  const sanitized: SanitizeTally = { urls: 0, clipped: 0 };
+  const spamAccounts = new Set<string>();
+  const spamExamples: string[] = [];
   let futureObs = 0;
+  let metadataOnly = 0;
 
   const videos: RawVideo[] = [];
   for (const v of Array.isArray(result?.videos) ? result.videos : []) {
     const reason = invalidVideoReason(v, adapter.platform);
-    if (reason) noteInvalid(badVideos, reason);
-    else videos.push(v);
+    if (reason) {
+      noteInvalid(badVideos, reason);
+      continue;
+    }
+    const clean = sanitizeVideo(v, sanitized);
+    const spam = promoSpamReason(clean, clean.account);
+    if (spam) {
+      stats.spam++;
+      spamAccounts.add(videoIdOf(clean.account.platform, clean.account.platformId));
+      if (spamExamples.length < 2) spamExamples.push(`「${clipChars(clean.title, 40)}」(${spam})`);
+      continue;
+    }
+    videos.push(clean);
   }
 
   // Accounts: one upsert per account with merged sightings + discoveredVia.
@@ -231,7 +316,7 @@ export function persistResult(store: Store, adapter: Pick<SourceAdapter, 'id' | 
   for (const a of Array.isArray(result?.accounts) ? result.accounts : []) {
     const reason = invalidAccountReason(a, adapter.platform);
     if (reason) noteInvalid(badAccounts, reason);
-    else addAccount(a, `${adapter.id}:account`, now);
+    else addAccount(sanitizeAccount(a, sanitized), `${adapter.id}:account`, now);
   }
   for (const v of videos) addAccount(v.account, typeof v.discoveredVia === 'string' ? v.discoveredVia : null, v.observedAt);
 
@@ -256,7 +341,11 @@ export function persistResult(store: Store, adapter: Pick<SourceAdapter, 'id' | 
         continue;
       }
       const c = v.counters ?? { views: null, likes: null, comments: null, shares: null };
-      if (store.addObservation(id, { t: v.observedAt, views: c.views ?? null, likes: c.likes ?? null, comments: c.comments ?? null, shares: c.shares ?? null, src })) {
+      if (!hasAnyCounter(c)) {
+        // Metadata-only sighting (e.g. a PeerTube video whose origin instance was not read this run): an
+        // all-null observation carries no data and would make the video look observed to the refresh tiers.
+        metadataOnly++;
+      } else if (store.addObservation(id, { t: v.observedAt, views: c.views ?? null, likes: c.likes ?? null, comments: c.comments ?? null, shares: c.shares ?? null, src })) {
         stats.observations++;
       }
       if (Array.isArray(v.sourceWindows) && v.sourceWindows.length) {
@@ -278,7 +367,25 @@ export function persistResult(store: Store, adapter: Pick<SourceAdapter, 'id' | 
   if (badVideos.count) stats.errors.push(`수집기 출력 검증: 잘못된 영상 ${badVideos.count}개를 저장하지 않음 (${badVideos.examples.join('; ')})`);
   if (badAccounts.count) stats.errors.push(`수집기 출력 검증: 잘못된 계정 ${badAccounts.count}개를 저장하지 않음 (${badAccounts.examples.join('; ')})`);
   if (futureObs) stats.errors.push(`관측 시각이 현재보다 미래인 관측 ${futureObs}건을 저장하지 않음`);
+  if (stats.spam) {
+    stats.notes.push(
+      `홍보성 스팸(불법 도박·성매매·대출 광고로 판별) 영상 ${stats.spam}개(계정 ${spamAccounts.size}개)를 저장하지 않음. 예: ${spamExamples.join('; ')}`,
+    );
+  }
+  if (sanitized.urls) stats.notes.push(`http(s)가 아닌 URL ${sanitized.urls}개(예: javascript:)를 저장하지 않음`);
+  if (sanitized.clipped) stats.notes.push(`제목(최대 ${TITLE_MAX_CHARS}자)·태그(최대 ${TAGS_MAX}개, 각 ${TAG_MAX_CHARS}자)가 한도를 넘은 영상 ${sanitized.clipped}개를 잘라서 저장함`);
+  if (metadataOnly) stats.notes.push(`조회·좋아요·댓글·공유 값이 하나도 없는 영상 ${metadataOnly}개는 영상 정보만 갱신하고 관측값은 저장하지 않음`);
   return stats;
+}
+
+/** Platform ids a result re-observed: videos with at least one counter, plus ids reported gone. */
+function observedPlatformIds(result: CollectResult): Set<string> {
+  const out = new Set<string>();
+  for (const v of Array.isArray(result?.videos) ? result.videos : []) {
+    if (v && typeof v.platformId === 'string' && hasAnyCounter(v.counters)) out.add(v.platformId);
+  }
+  for (const g of Array.isArray(result?.gone) ? result.gone : []) if (g && typeof g.platformId === 'string') out.add(g.platformId);
+  return out;
 }
 
 /* ------------------------------------------------------------------------------------------
@@ -290,6 +397,7 @@ export async function runCollection(opts: RunCollectionOptions): Promise<RunColl
   const env = opts.env ?? (process.env as Record<string, string | undefined>);
   const log = opts.log ?? silentLogger;
   const registry = opts.adapters ?? ADAPTERS;
+  const adapterTimeoutMs = opts.adapterTimeoutMs ?? adapterTimeoutFromEnv(env) ?? DEFAULT_ADAPTER_TIMEOUT_MS;
 
   if (opts.sources?.length) {
     const unknown = opts.sources.filter((s) => !registry.some((a) => a.id === s));
@@ -380,7 +488,7 @@ export async function runCollection(opts: RunCollectionOptions): Promise<RunColl
       accountsSeen: 0,
       gone: 0,
       requests: 0,
-      refresh: { requested: 0, due: 0, skipped: 0 },
+      refresh: { requested: 0, due: 0, skipped: 0, observed: 0 },
       errors: [],
       notes: [],
     };
@@ -418,8 +526,7 @@ export async function runCollection(opts: RunCollectionOptions): Promise<RunColl
     let selection: RefreshSelection | null = null;
     try {
       selection = selectRefreshIds(store, adapter, { now: t0, maxRequests, caps: opts.refreshCaps });
-      base.refresh = { requested: selection.ids.length, due: selection.due, skipped: selection.skipped };
-      if (selection.note) base.notes.push(selection.note);
+      base.refresh = { requested: selection.ids.length, due: selection.due, skipped: selection.skipped, observed: 0 };
     } catch (err) {
       base.errors.push(`갱신 대상 선택 실패: ${errMsg(err)}`);
     }
@@ -441,7 +548,7 @@ export async function runCollection(opts: RunCollectionOptions): Promise<RunColl
     let result: CollectResult | null = null;
     let threw: unknown = null;
     try {
-      result = await withTimeout(Promise.resolve().then(() => adapter.collect(ctx)), opts.adapterTimeoutMs ?? DEFAULT_ADAPTER_TIMEOUT_MS, () => {
+      result = await withTimeout(Promise.resolve().then(() => adapter.collect(ctx)), adapterTimeoutMs, () => {
         closed = true;
       });
     } catch (err) {
@@ -462,12 +569,20 @@ export async function runCollection(opts: RunCollectionOptions): Promise<RunColl
         base.accountsSeen = stats.accountsSeen;
         base.gone = stats.gone;
         base.errors.push(...stats.errors);
+        base.notes.push(...stats.notes);
       } catch (err) {
         base.errors.push(`저장 실패: ${errMsg(err)}`);
         threw = err;
       }
     } else {
       base.errors.push('수집기가 결과를 반환하지 않음');
+    }
+
+    // Refresh coverage, measured on what came back (never a silent cap).
+    if (selection) {
+      base.refresh.observed = result ? countObservedDue(selection.dueIds, observedPlatformIds(result)) : 0;
+      const note = refreshCoverageNote(selection, base.refresh.observed) ?? selection.note;
+      if (note) base.notes.push(note);
     }
 
     const secretsFrom = adapter.envKeys ?? [];
@@ -499,7 +614,7 @@ export async function runCollection(opts: RunCollectionOptions): Promise<RunColl
       log.error(`[${adapter.id}] run bookkeeping failed: ${errMsg(err)}`);
     }
 
-    const line = `${base.status}: videos ${base.videosSeen} (new ${base.videosNew}), observations ${base.observations}, accounts ${base.accountsSeen}, gone ${base.gone}, requests ${base.requests}, errors ${base.errors.length}`;
+    const line = `${base.status}: videos ${base.videosSeen} (new ${base.videosNew}), observations ${base.observations}, accounts ${base.accountsSeen}, gone ${base.gone}, refresh observed ${base.refresh.observed}/${base.refresh.due} due, requests ${base.requests}, errors ${base.errors.length}`;
     if (base.status === 'error') alog.error(`${line}${base.errors[0] ? ` - ${base.errors[0]}` : ''}`);
     else if (base.status === 'partial') alog.warn(line);
     else alog.info(line);

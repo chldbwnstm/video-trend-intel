@@ -14,7 +14,8 @@ import type { DatasetContextValue } from '../../data/context.ts';
 import { generateSampleDataset } from '../../../scripts/sample-generator.ts';
 import VideosPage from '../../pages/Videos.tsx';
 import { EMPTY_FILTERS, searchVideos, summarizeStatuses } from './model.ts';
-import { CoverageCallout, NotesCallout, unavailableShare } from './ResultNotes.tsx';
+import { breakdownParts, CoverageCallout, NotesCallout, unavailableShare } from './ResultNotes.tsx';
+import type { CollectionTimeline } from '../../lib/collection.ts';
 import { VideoDetailContent, VideoNotFound } from './VideoDetail.tsx';
 import type { DetailContext } from './VideoDetail.tsx';
 
@@ -176,6 +177,37 @@ describe('VideoDetailContent', () => {
 
 describe('callouts', () => {
   const st = (s: string, n: number) => Array.from({ length: n }, () => ({ status: s as 'exact' }));
+  // Collection started 2026-09-28T15:13Z (00:13 KST); niconico observations carry the earlier snapshot time.
+  const snapshotTimeline: CollectionTimeline = {
+    collectionStartAt: Date.parse('2026-09-28T15:13:23Z'),
+    firstObservationAt: Date.parse('2026-09-27T22:08:32Z'),
+    firstObservationSource: 'niconico',
+    lastObservationAt: Date.parse('2026-09-28T15:26:16Z'),
+    collectedUntil: Date.parse('2026-09-28T15:28:38Z'),
+  };
+
+  it('names the collection start and the earlier snapshot observations separately (same wording as trends)', () => {
+    const t = text(
+      renderEl(
+        h(CoverageCallout, {
+          coverage: 'none',
+          mode: 'activity',
+          age: 7,
+          label: '기간 조회 증가',
+          summary: summarizeStatuses(st('unavailable', 4)),
+          timeline: snapshotTimeline,
+          rolling: true,
+        }),
+      ),
+    );
+    expect(t).toContain('수집 시작 2026-09-29 00:13 KST');
+    expect(t).toContain('관측은 원천 스냅샷 시각 기준이라 2026-09-28 07:08부터 있음');
+  });
+
+  it('never prints a doubled source marker in the status breakdown', () => {
+    const parts = breakdownParts(summarizeStatuses([...st('source_reported', 2), ...st('lower_bound', 1)])).map((p) => p.text);
+    expect(parts).toEqual(['원천 제공값 2', '≥ 하한값 1']);
+  });
 
   it('explains why V7 cannot be computed yet and offers next steps', () => {
     const t = text(
@@ -186,7 +218,7 @@ describe('callouts', () => {
           age: 7,
           label: 'V7',
           summary: summarizeStatuses(st('unavailable', 10)),
-          collectionStart: value.now - 86_400_000,
+          timeline: snapshotTimeline,
           rolling: false,
           onUseUpload: () => undefined,
         }),
@@ -206,7 +238,7 @@ describe('callouts', () => {
           age: 7,
           label: '기간 조회 증가',
           summary: summarizeStatuses([...st('exact', 6), ...st('lower_bound', 1), ...st('unavailable', 3)]),
-          collectionStart: null,
+          timeline: null,
           rolling: false,
         }),
       ),
@@ -221,7 +253,7 @@ describe('callouts', () => {
     expect(unavailableShare(summary)).toBe('99% 이상');
     const t = text(
       renderEl(
-        h(CoverageCallout, { coverage: 'partial', mode: 'activity', age: 7, label: '기간 조회 증가', summary, collectionStart: null, rolling: false, onUseRolling: () => undefined, onUseUpload: () => undefined }),
+        h(CoverageCallout, { coverage: 'partial', mode: 'activity', age: 7, label: '기간 조회 증가', summary, timeline: null, rolling: false, onUseRolling: () => undefined, onUseUpload: () => undefined }),
       ),
     );
     expect(t).toContain('(99% 이상)');
@@ -230,7 +262,7 @@ describe('callouts', () => {
   });
 
   it('renders nothing when coverage is fine', () => {
-    expect(renderEl(h(CoverageCallout, { coverage: 'ok', mode: 'activity', age: 7, label: 'x', summary: summarizeStatuses(st('exact', 3)), collectionStart: null, rolling: true }))).toBe('');
+    expect(renderEl(h(CoverageCallout, { coverage: 'ok', mode: 'activity', age: 7, label: 'x', summary: summarizeStatuses(st('exact', 3)), timeline: null, rolling: true }))).toBe('');
   });
 
   it('shows the first notes and folds the rest', () => {

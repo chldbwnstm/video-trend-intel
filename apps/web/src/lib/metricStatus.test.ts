@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MetricStatus } from '@vti/core';
-import { formatMetricExact, formatMetricValue, metricDisplay, noteLabel, STATUS_META, STATUS_ORDER } from './metricStatus.ts';
+import { formatMetricExact, formatMetricValue, metricDisplay, noteLabel, STATUS_META, STATUS_ORDER, statusCountLabel } from './metricStatus.ts';
 
 describe('STATUS_META', () => {
   it('covers every MetricStatus with the SPEC markers', () => {
@@ -23,6 +23,18 @@ describe('STATUS_META', () => {
     expect(STATUS_META.unavailable.ranked).toBe(false);
     expect(STATUS_META.decrease_flagged.ranked).toBe(false);
     expect(STATUS_META.lower_bound.ranked).toBe(true);
+  });
+});
+
+describe('statusCountLabel', () => {
+  it('prefixes symbol markers but never doubles a word marker already in the label', () => {
+    expect(statusCountLabel('exact')).toBe('관측값');
+    expect(statusCountLabel('interpolated')).toBe('≈ 보간값');
+    expect(statusCountLabel('lower_bound')).toBe('≥ 하한값');
+    expect(statusCountLabel('source_reported')).toBe('원천 제공값');
+    expect(statusCountLabel('unavailable')).toBe('— 계산 불가');
+    expect(statusCountLabel('decrease_flagged')).toBe('⚠ 감소 표시');
+    for (const st of STATUS_ORDER) expect(statusCountLabel(st)).not.toMatch(/원천 원천/);
   });
 });
 

@@ -3,11 +3,22 @@
  */
 import type { LocalDateRange, MetricValue, Platform, TrendEntityKind, TrendingResult, TrendItem, UtcWindow, Video } from './types.ts';
 import type { DatasetIndex } from './dataset.ts';
-import { HOUR, localDateOf, previousWindow, resolveAnalysisWindow } from './time.ts';
+import { previousWindow, resolveAnalysisWindow } from './time.ts';
 import { increment } from './series.ts';
-import { windowIncrement } from './metrics.ts';
-import { ancestorsOf, categoryPathLabel } from './taxonomy.ts';
-import { categoryFilterSet, compareIds, compileVideoFilter, crossPlatformNote, indexAsOf, instantLabel, isSummableMetric, resolveNow } from './query.ts';
+import { GROWTH_MIN_PREVIOUS, windowIncrement } from './metrics.ts';
+import { ancestorsOf, categoryPathLabel, isGenericTopic, isSelfTopic } from './taxonomy.ts';
+import {
+  categoryFilterSet,
+  compareIds,
+  compileVideoFilter,
+  crossPlatformNote,
+  durationLabel,
+  indexAsOf,
+  instantLabel,
+  isSummableMetric,
+  resolveNow,
+  windowRangeLabel,
+} from './query.ts';
 
 export interface TrendingOptions {
   kind: TrendEntityKind;
@@ -21,13 +32,24 @@ export interface TrendingOptions {
   languages?: string[];
   /** Minimum contributing videos for an entity to be listed. Default 3. */
   minVideos?: number;
+  /**
+   * Minimum distinct accounts among an entity's contributing videos. Default 2 for topics (a topic used by one
+   * channel only is that channel's own label, e.g. its name or series hashtag, not a trend), 1 otherwise.
+   */
+  minAccounts?: number;
   limit?: number;
   /**
-   * Volume threshold for the rising / falling lists (guards against "10 -> 50 views = +400%"): rising needs
-   * current >= minCurrent, falling needs previous >= minCurrent. Default: the lower quartile of the listed
-   * entities' positive current (rising) / previous (falling) sums, at least 1.
+   * Volume threshold for the rising list: rising needs current >= minCurrent. Default: the lower quartile of the
+   * listed entities' positive current sums, at least 1. When given explicitly, falling also needs
+   * previous >= minCurrent.
    */
   minCurrent?: number;
+  /**
+   * Baseline threshold for both growth lists (the denominator of a growth rate; guards against "10 -> 650,000
+   * views = +6,500,000%"): rising and falling need previous >= minPrevious. Default: the lower quartile of the
+   * listed entities' positive previous sums, at least GROWTH_MIN_PREVIOUS (100 views, the per-video growth floor).
+   */
+  minPrevious?: number;
 }
 
 /** Default number of items per list. */
@@ -36,14 +58,19 @@ export const TRENDING_DEFAULT_LIMIT = 20;
 export const TRENDING_DEFAULT_MIN_VIDEOS = 3;
 /** Number of top video ids kept per entity. */
 export const TRENDING_TOP_VIDEOS = 5;
+/** Default minimum distinct accounts for topic entities (see TrendingOptions.minAccounts). */
+export const TRENDING_DEFAULT_MIN_TOPIC_ACCOUNTS = 2;
 
 interface Agg {
   key: string;
   current: number;
   previous: number;
   videoCount: number;
+  /** Summed videos with a positive previous-window increase (the growth baseline is spread over them). */
+  baselineVideos: number;
   incompleteCount: number;
   platforms: Set<Platform>;
+  accounts: Set<string>;
   top: { id: string; value: number }[];
 }
 
@@ -56,8 +83,11 @@ function lowerQuartileThreshold(values: number[]): number {
 
 function entityKeys(kind: TrendEntityKind, v: Video, index: DatasetIndex): string[] {
   switch (kind) {
-    case 'topic':
-      return [...new Set(v.topics ?? [])];
+    case 'topic': {
+      // Generic tags ('뉴스', 'ytn', 'shorts') and a channel's own name / handle used as a tag are not topics.
+      const account = index.accountsById.get(v.accountId);
+      return [...new Set(v.topics ?? [])].filter((t) => !isGenericTopic(t) && !isSelfTopic(t, account));
+    }
     case 'category': {
       const s = new Set<string>();
       for (const c of v.categories ?? []) for (const a of ancestorsOf(c.id)) s.add(a);
@@ -103,10 +133,18 @@ function entityLabel(kind: TrendEntityKind, key: string, index: DatasetIndex): s
  *   (deletion / correction) are excluded and reported in the notes, never ranked as negative popularity.
  * - A still-running window is compared with the same elapsed span of the previous window
  *   (`previousWindow` in the result is that compared span).
- * - videoCount = summed (like-for-like) videos; entities need videoCount >= minVideos (default 3).
+ * - videoCount = summed (like-for-like) videos; entities need videoCount >= minVideos (default 3) and, for
+ *   topics, summed videos from >= minAccounts distinct accounts (default 2). Generic topics and a channel's own
+ *   name / handle used as a topic are not topic entities (taxonomy isGenericTopic / isSelfTopic).
  * - growth = current / previous - 1, null when previous is 0.
- * - rising: growth > 0 and current >= minCurrent, by growth desc; falling: growth < 0 and previous >= minCurrent,
- *   by growth asc; top: current > 0 by current desc. Ties: key asc. Each list is cut to `limit` (default 20).
+ * - Growth lists only rank entities whose previous-window baseline is real: previous >= minPrevious (default:
+ *   lower quartile of the positive previous sums, at least 100) AND at least minVideos summed videos with a positive previous
+ *   increase. Otherwise a baseline of a few views (typically the publish ramp of one video uploaded minutes
+ *   before the previous window ended) turns new uploads into "65,987x growth".
+ * - rising: growth > 0, current >= minCurrent and the baseline rule, by growth desc; falling: growth < 0 and the
+ *   baseline rule (and previous >= an explicit minCurrent), by growth asc; top: current > 0 by current desc.
+ *   The default baseline threshold is max(lower quartile of positive previous sums, GROWTH_MIN_PREVIOUS).
+ *   Ties: key asc. Each list is cut to `limit` (default 20).
  * - platform = the single platform of an entity's summed videos, null when they span several.
  */
 export function computeTrending(index: DatasetIndex, opts: TrendingOptions): TrendingResult {
@@ -119,17 +157,17 @@ export function computeTrending(index: DatasetIndex, opts: TrendingOptions): Tre
   const prevEnd = w.endMs > now ? Math.max(prevFull.startMs, Math.min(prevFull.startMs + (curEnd - w.startMs), prevFull.endMs)) : prevFull.endMs;
   const prevW: UtcWindow = { startMs: prevFull.startMs, endMs: prevEnd, tz: w.tz, incomplete: prevFull.incomplete };
   const minVideos = Number.isFinite(opts.minVideos) ? Math.max(1, Math.floor(opts.minVideos as number)) : TRENDING_DEFAULT_MIN_VIDEOS;
+  const minAccounts = Number.isFinite(opts.minAccounts)
+    ? Math.max(1, Math.floor(opts.minAccounts as number))
+    : kind === 'topic'
+      ? TRENDING_DEFAULT_MIN_TOPIC_ACCOUNTS
+      : 1;
   const limit = Number.isFinite(opts.limit) ? Math.max(0, Math.floor(opts.limit as number)) : TRENDING_DEFAULT_LIMIT;
 
   const notes: string[] = [];
-  const windowLabel = (x: UtcWindow) => {
-    const s = localDateOf(x.startMs, tz);
-    const e = localDateOf(Math.max(x.startMs, x.endMs - 1), tz);
-    return s === e ? s : `${s}~${e}`;
-  };
 
   if (curEnd <= w.startMs) {
-    notes.push(`선택한 기간(${windowLabel(w)}, ${tz})이 데이터 기준 시각 ${instantLabel(now, tz)} 이후라 아직 집계할 조회 증가가 없습니다.`);
+    notes.push(`선택한 기간(${windowRangeLabel(w)})이 데이터 기준 시각 ${instantLabel(now, tz)} 이후라 아직 집계할 조회 증가가 없습니다.`);
     return { window: w, previousWindow: prevW, rising: [], falling: [], top: [], notes };
   }
 
@@ -176,7 +214,7 @@ export function computeTrending(index: DatasetIndex, opts: TrendingOptions): Tre
     for (const key of keys) {
       let a = aggs.get(key);
       if (!a) {
-        a = { key, current: 0, previous: 0, videoCount: 0, incompleteCount: 0, platforms: new Set(), top: [] };
+        a = { key, current: 0, previous: 0, videoCount: 0, baselineVideos: 0, incompleteCount: 0, platforms: new Set(), accounts: new Set(), top: [] };
         aggs.set(key, a);
       }
       if (state === 'incomplete') {
@@ -186,14 +224,23 @@ export function computeTrending(index: DatasetIndex, opts: TrendingOptions): Tre
       a.current += cur.value as number;
       a.previous += prev.value as number;
       a.videoCount++;
+      if ((prev.value as number) > 0) a.baselineVideos++;
       a.platforms.add(v.platform);
+      a.accounts.add(v.accountId);
       a.top.push({ id: v.id, value: cur.value as number });
     }
   }
 
   const items: TrendItem[] = [];
+  const baselineVideos = new Map<string, number>();
+  let singleAccount = 0;
   for (const a of aggs.values()) {
     if (a.videoCount < minVideos) continue;
+    if (a.accounts.size < minAccounts) {
+      singleAccount++;
+      continue;
+    }
+    baselineVideos.set(a.key, a.baselineVideos);
     a.top.sort((x, y) => y.value - x.value || compareIds(x.id, y.id));
     let platform: Platform | null = a.platforms.size === 1 ? [...a.platforms][0] : null;
     if (kind === 'account') platform = idx.accountsById.get(a.key)?.platform ?? platform;
@@ -211,18 +258,23 @@ export function computeTrending(index: DatasetIndex, opts: TrendingOptions): Tre
     });
   }
 
-  const explicitMin = Number.isFinite(opts.minCurrent) ? Math.max(0, opts.minCurrent as number) : null;
-  const risingMin = explicitMin ?? lowerQuartileThreshold(items.map((i) => i.current));
-  const fallingMin = explicitMin ?? lowerQuartileThreshold(items.map((i) => i.previous));
+  const explicitCur = Number.isFinite(opts.minCurrent) ? Math.max(0, opts.minCurrent as number) : null;
+  const explicitPrev = Number.isFinite(opts.minPrevious) ? Math.max(0, opts.minPrevious as number) : null;
+  const risingMin = explicitCur ?? lowerQuartileThreshold(items.map((i) => i.current));
+  const baselineMin = explicitPrev ?? Math.max(GROWTH_MIN_PREVIOUS, lowerQuartileThreshold(items.map((i) => i.previous)));
+  const fallingMin = Math.max(baselineMin, explicitCur ?? 0);
+  // The growth rate's denominator must be a real baseline: large enough and spread over several videos.
+  const hasBaseline = (i: TrendItem) => i.previous >= baselineMin && (baselineVideos.get(i.key) ?? 0) >= minVideos;
   const byKey = (x: TrendItem, y: TrendItem) => compareIds(x.key, y.key);
   const rising = items
-    .filter((i) => i.growth !== null && i.growth > 0 && i.current >= risingMin)
+    .filter((i) => i.growth !== null && i.growth > 0 && i.current >= risingMin && hasBaseline(i))
     .sort((x, y) => (y.growth as number) - (x.growth as number) || y.current - x.current || byKey(x, y))
     .slice(0, limit);
   const falling = items
-    .filter((i) => i.growth !== null && i.growth < 0 && i.previous >= fallingMin)
+    .filter((i) => i.growth !== null && i.growth < 0 && i.previous >= fallingMin && hasBaseline(i))
     .sort((x, y) => (x.growth as number) - (y.growth as number) || y.previous - x.previous || byKey(x, y))
     .slice(0, limit);
+  const thinBaseline = items.filter((i) => i.growth !== null && i.growth > 0 && i.current >= risingMin && !hasBaseline(i)).length;
   const top = items
     .filter((i) => i.current > 0)
     .sort((x, y) => y.current - x.current || byKey(x, y))
@@ -231,12 +283,11 @@ export function computeTrending(index: DatasetIndex, opts: TrendingOptions): Tre
   // Notes (Korean).
   const fmt = (n: number) => n.toLocaleString('ko-KR');
   notes.push(
-    `조회 발생 기간 기준: 게시일과 관계없이 ${windowLabel(w)}(${tz}) 동안 늘어난 조회수를 직전 같은 길이 기간(${windowLabel(prevW)})과 비교합니다.`,
+    `조회 발생 기간 기준: 게시일과 관계없이 ${windowRangeLabel(w)} 동안 늘어난 조회수를 직전 같은 길이 기간(${windowRangeLabel(prevW)})과 비교합니다.`,
   );
   if (w.incomplete) {
-    const hours = Math.round((curEnd - w.startMs) / HOUR);
     notes.push(
-      `기간이 아직 끝나지 않아(데이터 기준 ${instantLabel(now, tz)}) 직전 기간도 같은 경과 시간(약 ${fmt(hours)}시간)까지만 잘라 비교합니다.`,
+      `기간이 아직 끝나지 않아(데이터 기준 ${instantLabel(now, tz)}) 직전 기간도 같은 경과 시간(${durationLabel(curEnd - w.startMs)})까지만 잘라 비교합니다.`,
     );
   }
   notes.push(
@@ -255,9 +306,21 @@ export function computeTrending(index: DatasetIndex, opts: TrendingOptions): Tre
     notes.push(`현재 기간 증가량 중 ${fmt(sourceReported)}개는 원천이 직접 집계한 기간 지표(원천 보고값)입니다.`);
   }
   notes.push(
-    `목록에는 합산 영상이 ${fmt(minVideos)}개 이상인 항목만 표시합니다. 상승 목록은 이번 기간 증가량 ${fmt(Math.ceil(risingMin))} 이상, ` +
-      `하락 목록은 직전 기간 증가량 ${fmt(Math.ceil(fallingMin))} 이상인 항목만 성장률로 정렬합니다(작은 기준값에서 성장률이 과장되는 것 방지).`,
+    `목록에는 합산 영상이 ${fmt(minVideos)}개 이상인 항목만 표시합니다` +
+      (minAccounts > 1 ? `(주제는 서로 다른 채널 ${fmt(minAccounts)}곳 이상에서 쓰인 것만).` : '.') +
+      ` 상승·하락 목록은 직전 기간 증가량 ${fmt(Math.ceil(baselineMin))} 이상이 영상 ${fmt(minVideos)}개 이상에서 나온 항목만 성장률로 정렬하고, ` +
+      `상승 목록은 이번 기간 증가량 ${fmt(Math.ceil(risingMin))} 이상인 항목만 넣습니다(작은 기준값에서 성장률이 과장되는 것 방지).`,
   );
+  if (singleAccount > 0 && minAccounts > 1) {
+    const what = kind === 'topic' ? '주제' : '항목';
+    const where = minAccounts === 2 ? '한 채널에서만' : `채널 ${fmt(minAccounts - 1)}곳 이하에서만`;
+    notes.push(`${where} 쓰인 ${what} ${fmt(singleAccount)}개(채널 이름·자체 시리즈 태그 등)는 트렌드가 아니므로 목록에서 뺐습니다.`);
+  }
+  if (thinBaseline > 0) {
+    notes.push(
+      `직전 기간 기준값이 작거나 몇 개 영상에만 기댄 항목 ${fmt(thinBaseline)}개(주로 이번 기간 새로 올라온 영상이 대부분인 항목)는 성장률 대신 '상위' 목록에서 확인하세요.`,
+    );
+  }
   const fresh = items.filter((i) => i.growth === null && i.current > 0).length;
   if (fresh > 0) {
     notes.push(`직전 기간 증가량이 0이라 성장률을 정의할 수 없는 새 항목 ${fmt(fresh)}개는 상승 목록 대신 '상위' 목록에서 확인하세요.`);

@@ -85,19 +85,29 @@ with `_context=VideoTrendIntel`), retries with backoff on 429/5xx, 20s timeout.
 Tables (owner: collector-pipeline): `videos`, `accounts`, `observations` (video_id, t, views, likes,
 comments, shares, src — raw, append-only; one row per observation), `source_windows`, `follower_obs`,
 `video_classification` (current + version), `creators`, `creator_accounts`, `runs`, `run_errors`,
-`source_state` (first/last run, status). Migrations are idempotent (`CREATE TABLE IF NOT EXISTS`, `user_version`).
+`source_state` (first/last run, status), plus `video_sources` / `account_sources` (per-source coverage counts).
+Schema version 2 (`PRAGMA user_version`; v2 keeps only the latest source window per (video, metric, window) and
+repairs entity-encoded text once). Migrations are idempotent and run on open; a store newer than the code is refused.
+Raw observations are append-only and never thinned in the store (compaction happens only at export).
 
 Tiered refresh (refreshIds per source): age < 3 days → every run; 3–14 days → every ~12h;
 14–90 days → daily; older → weekly (and only if in the top slice of views). Deletion/private → status updated,
-never deleted from the store.
+never deleted from the store. Sources that can look videos up by id (dailymotion, peertube origin instances, niconico)
+receive the whole due list; the pipeline records how many due videos were actually re-observed. YouTube RSS cannot
+look up by id: channels whose 15-entry feed spans < 7 days are also read through their UULF (long-form) and UUSH
+(Shorts) playlist feeds; videos that leave every feed stop being observed (their later windows become lower bounds /
+unavailable, never zero).
 
 ## Export (`dataset.json`)
 
-`encodeDataset()` in core. Observation compaction for export only (raw stays in SQLite): keep all points for
-the last 72h, ≤ 1 per 6h for 3–14 days, ≤ 1 per day for 14–90 days, ≤ 1 per week older; always keep first
-and last point and the points nearest to each local-day boundary in Asia/Seoul (so daily windows stay exact).
-Size budget: target ≤ 40 MB raw JSON (format 2 delta-encoded; ~8 MB gzip on the wire); if exceeded drop lowest-view stale videos first and write what was
-dropped into `exportNotes`.
+`encodeDataset()` in core (format 2: delta-encoded observation columns, category tuples; instants floored to whole
+seconds so nothing lands after `generatedAt`). `generatedAt` = min(export clock, newest observation), so rebuilds
+without a fresh collection never push windows past the data. Observation compaction for export only (raw stays in
+SQLite): all points for the last 72h, ≤ 1 per 6h for 3–14 days, one per local day (Asia/Seoul) for 14–90 days, one per
+week older; first and last points always kept; both neighbours of each local midnight kept only for points < 14 days
+old (so daily windows stay exact where they matter). Size budget: ≤ 40 MB raw JSON (~8 MB gzip on the wire); when
+exceeded, prune stale/deleted videos first, then videos older than 7 days, then the last 7 days, ranking within each
+platform by views-per-day percentile (never raw cross-platform views); every step is written to `exportNotes`.
 
 ## Web conventions
 

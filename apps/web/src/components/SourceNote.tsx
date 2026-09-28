@@ -23,7 +23,10 @@ export interface SourceNoteProps {
   asOf: number;
   window?: UtcWindow | null;
   notes?: string[];
-  /** Source adapter ids / labels. */
+  /**
+   * What the result is based on, each item self-labelled (`분류기 rules-2026.09.1`, `협찬 판정 sponsor-…`,
+   * `켜진 원천 4개`). Rendered after `기준`; don't start items with `원천` twice.
+   */
   sources?: string[];
   /** Extra small-print items. */
   children?: ReactNode;
@@ -54,7 +57,7 @@ export function SourceNote({ asOf, window, notes, sources, children, coverageLin
         {sources && sources.length ? (
           <>
             <span aria-hidden>·</span>
-            <span>원천 {sources.join(', ')}</span>
+            <span>기준 {sources.join(', ')}</span>
           </>
         ) : null}
         {coverageLink ? (

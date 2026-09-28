@@ -9,7 +9,7 @@ import type { Account, CreatorSummary, LocalDateRange, MetricStatus, MetricValue
 import { PLATFORMS } from './types.ts';
 import type { DatasetIndex } from './dataset.ts';
 import { DAY, addDays, localDateOf, localDateStartUtc, resolveAnalysisWindow, resolveWindow, weekdayHourInTz } from './time.ts';
-import { increment, isKnownMetric, unavailableMetric, valueAt, valueAtAge } from './series.ts';
+import { increment, isKnownMetric, sortedObservations, unavailableMetric, valueAt, valueAtAge } from './series.ts';
 import { engagementAt, rankValue, windowIncrement } from './metrics.ts';
 import { topLevelOf } from './taxonomy.ts';
 import {
@@ -169,8 +169,9 @@ export function latestFollowers(a: Account, now: number): { value: number; t: nu
 /**
  * Follower change of one account over window `w` (clipped to `now`); null when the account has no follower data.
  * Both boundaries readable (exact / interpolated, as for video counters) -> the difference, which may be negative
- * (unfollows are real, not an error). Otherwise the observed part of the window only: 'lower_bound' (or
- * 'decrease_flagged' when that partial change is negative), or 'unavailable' when no point lies in the window.
+ * (unfollows are real, not an error). Otherwise 'unavailable' with the unreadable boundary's note: follower
+ * counts go down as well as up, so the change over the observed part of the window bounds nothing (it is not a
+ * 'lower_bound' and must not be ranked as one).
  */
 export function accountFollowerGrowth(a: Account, w: UtcWindow, now: number): MetricValue | null {
   const fv = followerSeries(a);
@@ -187,10 +188,20 @@ export function accountFollowerGrowth(a: Account, w: UtcWindow, now: number): Me
       note: null,
     };
   }
-  return increment(fv, 'views', w.startMs, w.endMs, now);
+  return unavailableMetric((isKnownMetric(s) ? e.note : s.note) ?? 'partial_window');
 }
 
 const GROWTH_RANK: Partial<Record<MetricStatus, number>> = { exact: 0, interpolated: 1, lower_bound: 2, decrease_flagged: 3 };
+
+/**
+ * A portfolio's engagement median is ranked only when it rests on at least this many videos with a rate...
+ * (a 1-video "median" of 6 views and 4 likes is 62%, not a creator's typical engagement).
+ */
+export const CREATOR_ENGAGEMENT_MIN_VIDEOS = 3;
+/** ... whose views (at the observations the rates were read from) add up to at least this many. */
+export const CREATOR_ENGAGEMENT_MIN_VIEWS = 1_000;
+/** Note on a portfolio engagement median below the ranking minimums (shown, not ranked). */
+export const SMALL_SAMPLE_NOTE = 'small_sample';
 
 /** Merge per-account follower changes: any unknown account makes the total unknown (followers can go down). */
 function mergeFollowerGrowth(parts: MetricValue[]): MetricValue {
@@ -277,6 +288,7 @@ export function summarizePortfolio(index: DatasetIndex, p: Portfolio, w: UtcWind
   let sponsoredCount = 0;
   const increments: MetricValue[] = [];
   const engagement: number[] = [];
+  let engagementViews = 0;
   let engagementAsOf: number | null = null;
   const v7: number[] = [];
   let v7Exact = true;
@@ -290,6 +302,7 @@ export function summarizePortfolio(index: DatasetIndex, p: Portfolio, w: UtcWind
       const e = engagementAt(v, asOfEnd);
       if (e.status !== 'unavailable' && typeof e.value === 'number' && Number.isFinite(e.value)) {
         engagement.push(e.value);
+        engagementViews += viewsAtObservation(v, e.asOf);
         if (e.asOf !== null && (engagementAsOf === null || e.asOf > engagementAsOf)) engagementAsOf = e.asOf;
       }
     }
@@ -318,7 +331,15 @@ export function summarizePortfolio(index: DatasetIndex, p: Portfolio, w: UtcWind
     engagementRate:
       engagementMedian === null
         ? unavailableMetric(videos.length ? 'counter_not_provided' : 'no_tracked_videos')
-        : { value: engagementMedian, status: 'exact', asOf: engagementAsOf, note: 'median_of_videos' },
+        : {
+            value: engagementMedian,
+            status: 'exact',
+            asOf: engagementAsOf,
+            note:
+              engagement.length >= CREATOR_ENGAGEMENT_MIN_VIDEOS && engagementViews >= CREATOR_ENGAGEMENT_MIN_VIEWS
+                ? 'median_of_videos'
+                : SMALL_SAMPLE_NOTE,
+          },
     medianV7:
       v7Median === null
         ? unavailableMetric(!videos.length ? 'no_tracked_videos' : reached7 === 0 ? 'not_reached' : 'no_v7_values')
@@ -326,6 +347,13 @@ export function summarizePortfolio(index: DatasetIndex, p: Portfolio, w: UtcWind
     topCategories: topCategoriesOf(videos, accounts),
     sponsoredCount,
   };
+}
+
+/** Views of the observation at `t` (the one an engagement rate was read from); 0 when not found. */
+function viewsAtObservation(v: Video, t: number | null): number {
+  if (t === null) return 0;
+  for (const p of sortedObservations(v)) if (p.t === t && typeof p.views === 'number' && Number.isFinite(p.views)) return p.views;
+  return 0;
 }
 
 function creatorSortValue(s: CreatorSummary, sort: NonNullable<CreatorOptions['sort']>): number | null {
@@ -337,7 +365,8 @@ function creatorSortValue(s: CreatorSummary, sort: NonNullable<CreatorOptions['s
     case 'uploads':
       return s.uploadsInWindow;
     case 'engagement':
-      return rankValue(s.engagementRate);
+      // a median over too few videos / views is shown but not ranked (it would put 1-video accounts on top)
+      return s.engagementRate.note === SMALL_SAMPLE_NOTE ? null : rankValue(s.engagementRate);
     case 'median_v7':
       return rankValue(s.medianV7);
     case 'followers_growth':
@@ -363,7 +392,9 @@ function creatorSortValue(s: CreatorSummary, sort: NonNullable<CreatorOptions['s
  * - viewsInWindow: sum of every video's honest view increase in the window (windowIncrement, see sumIncrements):
  *   'lower_bound' when any contributor is a lower bound or unmeasurable, decreases excluded.
  * - engagementRate: median of the videos' engagement rates as of min(window end, now) (available components
- *   only, never counting missing counters as 0).
+ *   only, never counting missing counters as 0; niconico without its on-video comments). A median over fewer
+ *   than CREATOR_ENGAGEMENT_MIN_VIDEOS (3) videos or CREATOR_ENGAGEMENT_MIN_VIEWS (1,000) views gets note
+ *   'small_sample': shown, but not ranked by the 'engagement' sort (such rows go last, like '—').
  * - medianV7: median views at 7 days after publish among videos with a readable V7.
  * - topCategories: up to 3 top-level categories by video count; sponsoredCount: videos with a sponsorship signal.
  * - Filters: q matches the creator / account names, handles and ids; categories (incl. descendants) keep

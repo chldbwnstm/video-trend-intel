@@ -378,8 +378,6 @@ export interface VideoFacets {
   /** Videos per taxonomy id, counting a video once under each of its ids and their ancestors. */
   categoryCounts: Record<string, number>;
   topics: TopicEntry[];
-  /** Earliest firstSeenAt (when our observations of this dataset start), null for an empty dataset. */
-  collectionStart: number | null;
   /** Videos with at least 2 views observations (a growth curve exists). */
   multiObserved: number;
 }
@@ -409,7 +407,6 @@ export function videoFacets(videos: readonly Video[]): VideoFacets {
   const formats = new Map<string, number>();
   const cats: Record<string, number> = {};
   const topics = new Map<string, number>();
-  let collectionStart: number | null = null;
   let multiObserved = 0;
   for (const v of videos) {
     platformCounts[v.platform] = (platformCounts[v.platform] ?? 0) + 1;
@@ -426,7 +423,6 @@ export function videoFacets(videos: readonly Video[]): VideoFacets {
     }
     for (const id of ids) cats[id] = (cats[id] ?? 0) + 1;
     for (const t of v.topics ?? []) topics.set(t, (topics.get(t) ?? 0) + 1);
-    if (Number.isFinite(v.firstSeenAt) && (collectionStart === null || v.firstSeenAt < collectionStart)) collectionStart = v.firstSeenAt;
     let n = 0;
     for (const o of v.obs) if (o.views !== null) n++;
     if (n >= 2) multiObserved++;
@@ -446,7 +442,6 @@ export function videoFacets(videos: readonly Video[]): VideoFacets {
     topics: [...topics.entries()]
       .map(([topic, count]) => ({ topic, norm: normalizeText(topic), count }))
       .sort((a, b) => b.count - a.count || (a.topic < b.topic ? -1 : 1)),
-    collectionStart,
     multiObserved,
   };
   facetCache.set(videos, facets);

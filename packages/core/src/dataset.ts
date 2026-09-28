@@ -11,6 +11,13 @@
  *   `<fieldCode>|<match>` and `version` is omitted when it equals the dataset's classifierVersion.
  * Format 1 (observation tuples `[tSeconds, views, likes, comments, shares, srcIndex]`, full category
  * objects) is still decoded.
+ *
+ * Time resolution: observation times and source-window `observedAt` are stored in whole seconds, rounded DOWN
+ * (floor). The collector sets `generatedAt` to the latest collection instant in ms, so rounding to the nearest
+ * second could put the latest run's data up to 0.5 s AFTER `generatedAt`, and every analytic (which reads the
+ * dataset as of `generatedAt`, see query.ts indexAsOf) would silently drop it. Flooring keeps every encoded
+ * instant <= its raw instant <= generatedAt. Files written by the old rounding encoder are repaired on decode:
+ * an instant less than one second after `generatedAt` can only be that rounding and is clamped to it.
  */
 import type {
   Account,
@@ -141,7 +148,7 @@ export function encodeDataset(ds: Dataset): CompactDataset {
     const obs = [...rawObs].sort((a, b) => a.t - b.t);
     let prevT = 0;
     const t = obs.map((p, i) => {
-      const s = Math.round(p.t / 1000);
+      const s = Math.floor(p.t / 1000);
       const enc = i === 0 ? s : s - prevT;
       prevT = s;
       return enc;
@@ -154,7 +161,7 @@ export function encodeDataset(ds: Dataset): CompactDataset {
       cat: categories.map((c) => encodeCategory(c, ds.classifierVersion)),
     };
     if (sourceWindows.length) {
-      cv.w = sourceWindows.map((w) => [w.metric, w.windowHours, w.value, Math.round(w.observedAt / 1000), idx(w.src)]);
+      cv.w = sourceWindows.map((w) => [w.metric, w.windowHours, w.value, Math.floor(w.observedAt / 1000), idx(w.src)]);
     }
     return cv;
   });
@@ -207,19 +214,29 @@ function decodeObservations(c: CompactDataset, o: CompactVideo['o']): Observatio
   return out;
 }
 
+/**
+ * Second-resolution instants written by the old (rounding) encoder can lie up to 0.5 s after `generatedAt`;
+ * nothing is ever collected after `generatedAt`, so such an instant is clamped back to it (see the header).
+ */
+function clampToGeneratedAt(ms: number, generatedAt: number): number {
+  return ms > generatedAt && ms - generatedAt < 1000 ? generatedAt : ms;
+}
+
 export function decodeDataset(c: CompactDataset): Dataset {
   if (c.schemaVersion !== 1) throw new Error(`Unsupported dataset schemaVersion ${String(c.schemaVersion)}`);
   const format = c.format ?? 1;
   if (format !== 1 && format !== 2) throw new Error(`Unsupported dataset format ${String(format)}`);
+  const gen = c.generatedAt;
   const videos: Video[] = c.videos.map((cv) => {
     const { o, w, cat, categories, ...rest } = cv;
     const obs = decodeObservations(c, o);
+    if (Number.isFinite(gen)) for (const p of obs) p.t = clampToGeneratedAt(p.t, gen);
     obs.sort((a, b) => a.t - b.t);
     const sourceWindows: SourceWindowMetric[] = (w ?? []).map((x) => ({
       metric: x[0] as SourceWindowMetric['metric'],
       windowHours: x[1],
       value: x[2],
-      observedAt: x[3] * 1000,
+      observedAt: Number.isFinite(gen) ? clampToGeneratedAt(x[3] * 1000, gen) : x[3] * 1000,
       src: c.srcTable[x[4]] ?? 'unknown',
     }));
     const cats = cat ? cat.map((t) => decodeCategory(t, c.classifierVersion)) : (categories ?? []);

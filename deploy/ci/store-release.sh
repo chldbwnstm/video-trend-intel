@@ -2,14 +2,16 @@
 # Keep the collector's SQLite store (data/store.sqlite) in a GitHub Release asset. OWNER: deploy.
 #
 #   deploy/ci/store-release.sh restore [--force]   download store.sqlite.gz (fallback store.prev.sqlite.gz) into $STORE_DB
-#   deploy/ci/store-release.sh save                guard + upload $STORE_DB as store.sqlite.gz (previous -> store.prev.sqlite.gz)
+#   deploy/ci/store-release.sh save                guard + upload a compacted copy of $STORE_DB as store.sqlite.gz
+#                                                  (previous -> store.prev.sqlite.gz)
 #   deploy/ci/store-release.sh seed <file.gz> [--force]
 #                                                  one-time upload of a local store (deploy/bootstrap.sh); never overwrites
 #                                                  an existing remote store unless --force
 #   deploy/ci/store-release.sh status              list the release assets
 #
 # Release layout (tag $STORE_TAG, default "data-store"; a pre-release that is never marked latest):
-#   store.sqlite.gz        current store (gzip -9 -n of the checkpointed SQLite file)
+#   store.sqlite.gz        current store (gzip -9 -n of a VACUUM INTO copy of the checkpointed SQLite file: free
+#                          pages left by deleted rows, e.g. superseded source windows, are not uploaded)
 #   store.prev.sqlite.gz   the store of the previous run (fallback when the current asset is missing or corrupt)
 #
 # Guards (a failed guard exits 1 and uploads nothing):
@@ -17,7 +19,11 @@
 #     (sha256 digest, gzip -t, SQLite quick_check); set STORE_ALLOW_EMPTY=1 to start over deliberately.
 #   - `save` refuses a store that fails quick_check, is more than STORE_MAX_SHRINK_PCT (20) % smaller than the
 #     restored one, or has fewer videos / observations than it (the store is append-only); STORE_ALLOW_SHRINK=1
-#     overrides. It also refuses when store.sqlite.gz changed on the release since `restore` (someone else uploaded).
+#     overrides. It also refuses when store.sqlite.gz changed on the release since `restore` (someone else uploaded),
+#     and when the compacted copy fails quick_check or holds other row counts than the live store.
+#
+# Outputs (GITHUB_OUTPUT): restore -> restored, source, bytes, videos, last_run_at (ms of the newest collection run,
+# empty when none; the workflow's Plan step uses it to collect on a push when the schedule fell behind).
 #
 # Environment: GH_TOKEN (or a logged-in gh), GH_REPO (owner/name; default: the git remote), STORE_TAG,
 #   STORE_DB (data/store.sqlite), STORE_WORK (work dir, default $RUNNER_TEMP/vti-store), STORE_MAX_SHRINK_PCT,
@@ -87,6 +93,10 @@ release_assets() {
 
 asset_line() { # <assets text> <name>
   printf '%s\n' "$1" | awk -F'\t' -v n="$2" '$1 == n { print; exit }'
+}
+
+kv_get() { # <KEY=VALUE text> <key>: the value of one key (empty when absent)
+  printf '%s\n' "$1" | awk -v k="$2" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }'
 }
 
 field() { # <asset line> <1-based field>
@@ -200,12 +210,12 @@ cmd_restore() {
     if info="$(inspect "$DB.restore" --require-ok)"; then
       rm -f "$DB" "$DB-wal" "$DB-shm"
       mv "$DB.restore" "$DB"
-      local STORE_BYTES=0 STORE_VIDEOS=0 STORE_OBSERVATIONS=0
+      local STORE_BYTES=0 STORE_VIDEOS=0 STORE_OBSERVATIONS=0 STORE_LAST_RUN_AT=""
       load_kv "$info"
       write_state "$name" "$STORE_BYTES" "${STORE_VIDEOS:-0}" "${STORE_OBSERVATIONS:-0}" "$cur_id" "$cur_digest"
       [ "$name" = "$CUR" ] || warn "restored the PREVIOUS store ($PREV): $CUR was missing or unusable"
-      log "restored $name -> $DB: $STORE_BYTES bytes, ${STORE_VIDEOS:-0} videos, ${STORE_OBSERVATIONS:-0} observations"
-      output restored=true "source=$name" "bytes=$STORE_BYTES" "videos=${STORE_VIDEOS:-0}"
+      log "restored $name -> $DB: $STORE_BYTES bytes, ${STORE_VIDEOS:-0} videos, ${STORE_OBSERVATIONS:-0} observations, last run ${STORE_LAST_RUN_AT:-none}"
+      output restored=true "source=$name" "bytes=$STORE_BYTES" "videos=${STORE_VIDEOS:-0}" "last_run_at=${STORE_LAST_RUN_AT:-}"
       summary "- Store: restored \`$name\` ($STORE_BYTES bytes, ${STORE_VIDEOS:-0} videos, ${STORE_OBSERVATIONS:-0} observations)"
       return 0
     fi
@@ -257,8 +267,27 @@ cmd_save() {
 
   mkdir -p "$WORK/up" "$WORK/prev"
   rm -f "$WORK/up/$CUR"
-  gzip -9 -n -c "$DB" >"$WORK/up/$CUR"
-  gzip -t "$WORK/up/$CUR" || die "gzip of $DB is not valid"
+  # Upload a compacted copy (VACUUM INTO): rows deleted by migrations or superseded source windows leave free
+  # pages that gzip would otherwise ship on every save. The copy must pass quick_check and hold the same rows.
+  local compact="$WORK/up/store.compact.sqlite" cinfo="" upload_src="$DB" c_videos c_obs c_bytes
+  rm -f "$compact"
+  if node --disable-warning=ExperimentalWarning "$INSPECT" "$DB" --vacuum-into "$compact" --env >/dev/null \
+    && cinfo="$(inspect "$compact" --require-ok)"; then
+    c_videos="$(kv_get "$cinfo" STORE_VIDEOS)"
+    c_obs="$(kv_get "$cinfo" STORE_OBSERVATIONS)"
+    c_bytes="$(kv_get "$cinfo" STORE_BYTES)"
+    if [ "${c_videos:-0}" != "$STORE_VIDEOS" ] || [ "${c_obs:-0}" != "$STORE_OBSERVATIONS" ]; then
+      die "compacted copy holds other row counts (videos $c_videos, observations $c_obs) than $DB ($STORE_VIDEOS, $STORE_OBSERVATIONS); not uploading"
+    fi
+    upload_src="$compact"
+    log "compacted copy: $c_bytes bytes (live file $STORE_BYTES bytes)"
+  else
+    warn "VACUUM INTO failed; uploading the live file instead"
+    rm -f "$compact"
+  fi
+  gzip -9 -n -c "$upload_src" >"$WORK/up/$CUR"
+  gzip -t "$WORK/up/$CUR" || die "gzip of $upload_src is not valid"
+  rm -f "$compact"
   local gz_bytes gz_sha
   gz_bytes="$(wc -c <"$WORK/up/$CUR" | tr -d ' ')"
   gz_sha="$(sha256_of "$WORK/up/$CUR")"

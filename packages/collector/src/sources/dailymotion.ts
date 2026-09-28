@@ -3,10 +3,17 @@
  *
  * Discovery: `GET https://api.dailymotion.com/videos` for each `ctx.seeds.dailymotion` query
  * (channel / country / language / sort / search), paginated with `limit` (max 100) + `page`.
+ * Seeds without a country: the API localizes such results to the CALLER's location (verified 2026-09-28: the same
+ * trending query returned only AU videos from Australia and US videos from a GitHub runner; `localization=fr_FR`
+ * returned FR). Those seeds therefore always send an explicit `localization` (default en_US, env
+ * DAILYMOTION_GLOBAL_LOCALIZATION) so the "global" set does not change with the machine that collects it.
+ *
  * Refresh: `GET /videos?ids=<≤100 comma separated>&limit=100` (without `limit` the API returns only 10!).
- * Ids missing from a refresh batch are probed individually with `GET /video/<id>` while the request budget
- * allows: 404 "does not exist or has been deleted" -> `deleted`, 403 / `private: true` -> `private`; ids that
- * cannot be probed are reported as `unknown`.
+ * The whole due list comes in priority order; ids discovery already returned are skipped and batches stop at the
+ * request budget (the pipeline reports how many due ids were left for the next run).
+ * Ids missing from a refresh batch are probed individually with `GET /video/<id>` right after their batch, while
+ * the request budget allows: 404 "does not exist or has been deleted" -> `deleted`, 403 / `private: true` ->
+ * `private`; ids that cannot be probed are reported as `unknown`.
  */
 import type { MetricKey, VideoStatus } from '@vti/core';
 import type { CollectContext, CollectResult, DailymotionQuerySeed, RawAccount, RawVideo, SourceAdapter } from '../types.ts';
@@ -72,12 +79,23 @@ interface DmList {
   error?: unknown;
 }
 
+/** Localization sent with seeds that have no country (see the file header). */
+export const DAILYMOTION_DEFAULT_LOCALIZATION = 'en_US';
+const LOCALIZATION_RE = /^[a-z]{2}_[A-Z]{2}$/;
+
+/** Localization for country-less seeds: env DAILYMOTION_GLOBAL_LOCALIZATION (`ll_CC`) or the default. */
+export function dailymotionGlobalLocalization(env?: Record<string, string | undefined>): string {
+  const v = env?.DAILYMOTION_GLOBAL_LOCALIZATION?.trim();
+  return v && LOCALIZATION_RE.test(v) ? v : DAILYMOTION_DEFAULT_LOCALIZATION;
+}
+
 /** Build the `/videos` search URL for one seed page. */
-export function dailymotionSearchUrl(seed: DailymotionQuerySeed, page: number, limit: number): string {
+export function dailymotionSearchUrl(seed: DailymotionQuerySeed, page: number, limit: number, localization: string = DAILYMOTION_DEFAULT_LOCALIZATION): string {
   const p = new URLSearchParams();
   p.set('fields', DAILYMOTION_FIELDS.join(','));
   if (seed.channel) p.set('channel', seed.channel);
   if (seed.country) p.set('country', seed.country.toLowerCase());
+  else p.set('localization', localization);
   if (seed.language) p.set('language', seed.language.toLowerCase());
   if (seed.search) p.set('search', seed.search);
   p.set('sort', seed.sort);
@@ -101,10 +119,10 @@ export function dailymotionVideoUrl(id: string): string {
   return `${DAILYMOTION_API}/video/${encodeURIComponent(id)}?${p.toString()}`;
 }
 
-/** `dailymotion:<sort>:<country|global>[:search]` */
-export function dailymotionDiscoveredVia(seed: DailymotionQuerySeed): string {
-  const country = seed.country ? seed.country.toLowerCase() : 'global';
-  return `dailymotion:${seed.sort}:${country}${seed.search ? ':search' : ''}`;
+/** `dailymotion:<sort>:<country|loc-<localization>>[:search]` (country-less seeds name their fixed localization). */
+export function dailymotionDiscoveredVia(seed: DailymotionQuerySeed, localization: string = DAILYMOTION_DEFAULT_LOCALIZATION): string {
+  const scope = seed.country ? seed.country.toLowerCase() : `loc-${localization}`;
+  return `dailymotion:${seed.sort}:${scope}${seed.search ? ':search' : ''}`;
 }
 
 /** Dailymotion error JSON (`{error:{code,message,type}}`) -> short message, or null if not an error payload. */
@@ -240,10 +258,11 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
 
   /* ---------------------------------------------------------------- discovery */
   const seeds = ctx.seeds?.dailymotion ?? [];
+  const localization = dailymotionGlobalLocalization(ctx.env);
   let budgetStop = false;
   for (let si = 0; si < seeds.length; si++) {
     const seed = seeds[si];
-    const label = dailymotionDiscoveredVia(seed) + (seed.channel ? `(${seed.channel})` : '') + (seed.search ? `「${seed.search}」` : '');
+    const label = dailymotionDiscoveredVia(seed, localization) + (seed.channel ? `(${seed.channel})` : '') + (seed.search ? `「${seed.search}」` : '');
     if (seed.sort === 'relevance' && !seed.search) {
       errors.push(`시드 ${label}: relevance 정렬은 search 가 필요함(요청 생략)`);
       continue;
@@ -252,7 +271,7 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
     if (want === 0) continue;
     const pageSize = Math.min(DAILYMOTION_PAGE_MAX, want);
     const pages = Math.ceil(want / pageSize);
-    const via = dailymotionDiscoveredVia(seed);
+    const via = dailymotionDiscoveredVia(seed, localization);
     let got = 0;
     for (let page = 1; page <= pages && got < want; page++) {
       if (!budget.has()) {
@@ -262,7 +281,7 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
       }
       let body: DmList;
       try {
-        body = await getList(dailymotionSearchUrl(seed, page, pageSize));
+        body = await getList(dailymotionSearchUrl(seed, page, pageSize, localization));
       } catch (err) {
         const { status, text } = describeError(err);
         errors.push(`시드 ${label} ${page}페이지 실패${status ? `(HTTP ${status})` : ''}: ${text}`);
@@ -281,14 +300,45 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
   }
 
   /* ---------------------------------------------------------------- refresh */
+  // Probe ids the batch endpoint silently dropped (deleted, private or otherwise unavailable).
+  let probeSkipped = 0;
+  const probeMissing = async (missing: string[]): Promise<void> => {
+    for (const id of missing) {
+      if (!budget.has()) {
+        probeSkipped++;
+        gone.push({ platformId: id, status: 'unknown' });
+        continue;
+      }
+      try {
+        budget.take();
+        const body = await ctx.http.getJson<DmVideo>(dailymotionVideoUrl(id));
+        const apiErr = dailymotionErrorText(body);
+        if (apiErr) throw Object.assign(new Error(apiErr), { json: body });
+        const goneStatus = dailymotionGoneStatus(body);
+        if (goneStatus) gone.push({ platformId: id, status: goneStatus });
+        else if (push(body, 'dailymotion:refresh') === 'invalid') gone.push({ platformId: id, status: 'unknown' });
+      } catch (err) {
+        const { status, text } = describeError(err);
+        const json = errorJson(err) as { error?: { type?: string; code?: number } } | null;
+        const code = status ?? (typeof json?.error?.code === 'number' ? json.error.code : null);
+        if (code === 404 || code === 410 || json?.error?.type === 'not_found') gone.push({ platformId: id, status: 'deleted' });
+        else if (code === 403 || code === 401 || json?.error?.type === 'access_forbidden') gone.push({ platformId: id, status: 'private' });
+        else {
+          gone.push({ platformId: id, status: 'unknown' });
+          errors.push(`영상 ${id} 상태 확인 실패${status ? `(HTTP ${status})` : ''}: ${text}`);
+        }
+      }
+    }
+  };
+
   const refreshIds = uniqueStrings(ctx.refreshIds ?? []).filter((id) => !seen.has(id));
-  const missing: string[] = [];
   const batches = chunk(refreshIds, DAILYMOTION_PAGE_MAX);
+  let deferred = 0;
   for (let bi = 0; bi < batches.length; bi++) {
     const ids = batches[bi];
     if (!budget.has()) {
-      const left = batches.slice(bi).reduce((n, b) => n + b.length, 0);
-      errors.push(`요청 한도(maxRequests=${ctx.maxRequests}) 도달: 갱신 대상 ${left}개 미갱신`);
+      // Budget-bound refresh: the rest stays due and goes first next run (the pipeline notes how many).
+      deferred = batches.slice(bi).reduce((n, b) => n + b.length, 0);
       break;
     }
     let body: DmList;
@@ -311,37 +361,10 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
       }
       push(v, 'dailymotion:refresh');
     }
-    for (const id of ids) if (!returned.has(id)) missing.push(id);
+    // Right after the batch, so later batches cannot starve the probes of this one.
+    await probeMissing(ids.filter((id) => !returned.has(id)));
   }
-
-  // Probe ids the batch endpoint silently dropped (deleted, private or otherwise unavailable).
-  let probeSkipped = 0;
-  for (const id of missing) {
-    if (!budget.has()) {
-      probeSkipped++;
-      gone.push({ platformId: id, status: 'unknown' });
-      continue;
-    }
-    try {
-      budget.take();
-      const body = await ctx.http.getJson<DmVideo>(dailymotionVideoUrl(id));
-      const apiErr = dailymotionErrorText(body);
-      if (apiErr) throw Object.assign(new Error(apiErr), { json: body });
-      const goneStatus = dailymotionGoneStatus(body);
-      if (goneStatus) gone.push({ platformId: id, status: goneStatus });
-      else if (push(body, 'dailymotion:refresh') === 'invalid') gone.push({ platformId: id, status: 'unknown' });
-    } catch (err) {
-      const { status, text } = describeError(err);
-      const json = errorJson(err) as { error?: { type?: string; code?: number } } | null;
-      const code = status ?? (typeof json?.error?.code === 'number' ? json.error.code : null);
-      if (code === 404 || code === 410 || json?.error?.type === 'not_found') gone.push({ platformId: id, status: 'deleted' });
-      else if (code === 403 || code === 401 || json?.error?.type === 'access_forbidden') gone.push({ platformId: id, status: 'private' });
-      else {
-        gone.push({ platformId: id, status: 'unknown' });
-        errors.push(`영상 ${id} 상태 확인 실패${status ? `(HTTP ${status})` : ''}: ${text}`);
-      }
-    }
-  }
+  if (deferred) ctx.log?.info?.(`[${ID}] request budget reached: ${deferred} due id(s) left for the next run`);
   if (probeSkipped) {
     errors.push(`요청 한도 도달: 갱신 응답에서 빠진 영상 ${probeSkipped}개의 삭제/비공개 여부 미확인(unknown 처리)`);
   }
@@ -366,7 +389,8 @@ export const dailymotion: SourceAdapter = {
     '조회수(views_total)·좋아요(likes_total)는 API 공개값입니다. 댓글·공유 수는 제공되지 않습니다(미제공, 0이 아님).',
     '최근 24시간/7일/30일 조회수(views_last_day/week/month)는 Dailymotion이 직접 집계해 보고한 값(원천 보고값)이며 관측 시점에 끝나는 구간에만 유효합니다. 누적값보다 크거나 구간 간 순서가 맞지 않으면 버립니다.',
     '구간 조회수는 원천 집계 지연으로 0 또는 누적값과 같게 보고되는 경우가 관측되었습니다. 우리 관측치로 계산한 증가량과 다를 수 있습니다.',
-    '국가(country)와 언어(language)는 업로더가 지정한 원천 값입니다. 시청자 지역이 아닙니다. 국가 조건 없이 조회하면 API가 요청 위치 기준으로 결과를 지역화할 수 있습니다.',
+    '국가(country)와 언어(language)는 업로더가 지정한 원천 값입니다. 시청자 지역이 아닙니다.',
+    '국가 조건이 없는 시드(비교용)는 API가 요청 위치 기준으로 결과를 지역화합니다. 2026-09-28 수집을 GitHub Actions(미국 서버)로 옮기면서 이 시드의 결과가 호주 기준에서 미국 기준으로 바뀌었고, 그날 미국 영상 약 1,200개가 새 영상으로 한꺼번에 추가되었습니다(신규 업로드 추이 해석 시 주의). 이후로는 localization=en_US(환경 변수 DAILYMOTION_GLOBAL_LOCALIZATION로 변경 가능)로 고정해 수집 위치와 무관하게 같은 기준으로 가져오며, 발견 경로는 dailymotion:<정렬>:loc-en_US로 기록합니다.',
     '형식: mode=live 이면 라이브, 길이 60초 이하 short, 그 외 long.',
     '검색 결과는 조건당 최대 1,000개(API 제한)이며 시드별 limit 만큼만 가져옵니다.',
     'ids= 갱신 응답에서 빠진 영상은 개별 조회로 삭제(404)·비공개(403)를 확인하고, 요청 한도 때문에 확인하지 못하면 상태 미상(unknown)으로 기록합니다.',

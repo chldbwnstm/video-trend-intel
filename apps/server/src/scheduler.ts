@@ -5,6 +5,8 @@
  * - Never two runs at once: a tick that finds a run in progress is skipped (logged) and rescheduled.
  * - A failing run (thrown error, total source failure, failed export) is logged and recorded in status();
  *   it never throws out of the scheduler, so the server keeps serving the last good dataset.
+ * - status() feeds the public /api/v1/health: by default it carries only the public-safe summary (message) and a
+ *   generic error note; raw error text and job details (which hold filesystem paths) need status(true).
  * - First run: at `firstRunAt` (main.ts passes "one interval after the loaded export was generated", or a short
  *   delay when that is already overdue / there is no export).
  */
@@ -15,8 +17,14 @@ import type { AppLogger } from './app.ts';
 
 export interface JobSummary {
   ok: boolean;
-  /** One-line Korean/English summary for status + logs. */
+  /**
+   * One-line summary for status + logs. Shown on the public /api/v1/health, so it must not contain filesystem
+   * paths or raw error text (put those in `error` / `details`).
+   */
   message: string;
+  /** Raw diagnostic of a failed run (server log + verbose health only). Default: `message`. */
+  error?: string | null;
+  /** Diagnostics (may hold paths): server-side + verbose health only. */
   details?: Record<string, unknown>;
 }
 
@@ -54,6 +62,9 @@ export interface SchedulerStatus {
   skippedTicks: number;
   lastRun: RunRecord | null;
 }
+
+/** Public stand-in for a failed run's raw error (the full text is in the server log). */
+export const RUN_ERROR_PUBLIC = '수집 실행이 실패했습니다. 자세한 내용은 서버 로그를 확인하세요.';
 
 function errText(err: unknown): string {
   return err instanceof Error ? err.message || err.name : String(err);
@@ -126,7 +137,7 @@ export class Scheduler {
       let rec: RunRecord;
       try {
         const s = await this.opts.job();
-        rec = { startedAt, finishedAt: this.clock(), ok: s.ok, message: s.message, error: s.ok ? null : s.message, details: s.details };
+        rec = { startedAt, finishedAt: this.clock(), ok: s.ok, message: s.message, error: s.ok ? null : (s.error ?? s.message), details: s.details };
       } catch (err) {
         rec = { startedAt, finishedAt: this.clock(), ok: false, message: 'collection failed', error: errText(err) };
       }
@@ -160,7 +171,12 @@ export class Scheduler {
     return this.current !== null;
   }
 
-  status(): SchedulerStatus {
+  /**
+   * Scheduler state for /api/v1/health. Default (public): lastRun without `details` and with a generic `error`,
+   * since both can hold filesystem paths or raw error text. `verbose` (HEALTH_VERBOSE=1) returns the full record.
+   */
+  status(verbose = false): SchedulerStatus {
+    const last = this.last;
     return {
       enabled: !this.stopped,
       intervalMin: Math.round(this.opts.intervalMs / 60_000),
@@ -170,7 +186,10 @@ export class Scheduler {
       runs: this.runs,
       failures: this.failures,
       skippedTicks: this.skipped,
-      lastRun: this.last,
+      lastRun:
+        !last || verbose
+          ? last
+          : { startedAt: last.startedAt, finishedAt: last.finishedAt, ok: last.ok, message: last.message, error: last.error === null ? null : RUN_ERROR_PUBLIC },
     };
   }
 }
@@ -258,10 +277,12 @@ export function createCollectJob(opts: CollectJobOptions): Job {
       }
       const sources = `${collection.succeeded}/${collection.attempted} source(s) ok`;
       const ok = !collection.totalFailure && exportError === null;
-      const message = exportError ? `${sources}; export failed: ${exportError}` : collection.totalFailure ? `all sources failed (${summarize(collection)}); export written` : `${sources}; ${summarize(collection)}`;
+      // `message` is public (health); the raw export error (it usually names a path) goes to `error` only.
+      const message = exportError ? `${sources}; export failed (see the server log)` : collection.totalFailure ? `all sources failed (${summarize(collection)}); export written` : `${sources}; ${summarize(collection)}`;
       return {
         ok,
         message,
+        error: exportError ? `${sources}; export failed: ${exportError}` : null,
         details: {
           attempted: collection.attempted,
           succeeded: collection.succeeded,

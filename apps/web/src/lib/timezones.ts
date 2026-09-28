@@ -2,13 +2,16 @@
 export interface TzOption {
   id: string;
   label: string;
+  /** Suffix after times (`12:00 KST`). */
   short: string;
+  /** Option text on narrow screens (the top-bar select). */
+  compact: string;
 }
 
 export const TZ_OPTIONS: TzOption[] = [
-  { id: 'Asia/Seoul', label: '서울 (Asia/Seoul)', short: 'KST' },
-  { id: 'Australia/Sydney', label: '시드니 (Australia/Sydney)', short: '시드니' },
-  { id: 'UTC', label: '협정 세계시 (UTC)', short: 'UTC' },
+  { id: 'Asia/Seoul', label: '서울 (Asia/Seoul)', short: 'KST', compact: '서울' },
+  { id: 'Australia/Sydney', label: '시드니 (Australia/Sydney)', short: '시드니', compact: '시드니' },
+  { id: 'UTC', label: '협정 세계시 (UTC)', short: 'UTC', compact: 'UTC' },
 ];
 
 export const DEFAULT_DISPLAY_TZ = 'Asia/Seoul';

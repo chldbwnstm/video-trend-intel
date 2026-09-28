@@ -22,7 +22,10 @@ import type { AgeDays, MetricKey, MetricValue, ObservationPoint, Video } from '.
 import { DAY, HOUR, addDays, daysBetween, localDateStartUtc } from './time.ts';
 
 export interface SeriesOptions {
-  /** An observation within this distance of the requested instant counts as 'exact'. Default 2h. */
+  /**
+   * An observation within this distance of the requested instant counts as 'exact'. Default 2h.
+   * For window increments it is further capped at BOUNDARY_TOLERANCE_WINDOW_FRACTION of the (clipped) window.
+   */
   boundaryToleranceMs?: number;
   /** Max gap between two bracketing observations for 'interpolated'. Default 48h (age metrics: see valueAtAge). */
   maxInterpolationGapMs?: number;
@@ -30,6 +33,16 @@ export interface SeriesOptions {
 
 export const DEFAULT_BOUNDARY_TOLERANCE_MS = 2 * HOUR;
 export const DEFAULT_MAX_INTERPOLATION_GAP_MS = 48 * HOUR;
+/**
+ * For an increment over [start, end) a boundary observation counts as 'exact' only when it is within
+ * min(boundary tolerance, this fraction of the clipped window length) of the boundary. The views gained in
+ * the uncovered offset are missing from (or added to) the increment, so a fixed 2h tolerance would call a
+ * 26-minute "today" window 'exact' from observations 13 minutes off each boundary (half the window). With 5%
+ * the error of an 'exact' increment stays around 10% at worst for a steady counter; a 24h window keeps a
+ * 72-minute tolerance, a 7-day window the full 2h. Boundaries further off are interpolated between
+ * bracketing observations or fall back to 'lower_bound'.
+ */
+export const BOUNDARY_TOLERANCE_WINDOW_FRACTION = 0.05;
 
 /* ------------------------------------------------------------------------------------------
  * Cached per-metric series (non-null points only)
@@ -259,6 +272,11 @@ function refTime(m: MetricValue, fallback: number): number {
  *
  * Details
  * - Both boundaries known: 'exact' when both are exact, otherwise 'interpolated'.
+ * - Boundary tolerance: an observation counts as a boundary's exact value only within
+ *   min(tolerance, BOUNDARY_TOLERANCE_WINDOW_FRACTION * (clipped window length)) of it, so a short window is
+ *   never called exact from observations far off its boundaries.
+ * - A window whose only information is one observation (both boundaries unreadable, one point inside) is
+ *   'unavailable', never a fabricated 0.
  * - The same lower-bound fallback applies whenever a boundary is unreadable (gap too wide, counter
  *   hidden later): the nearest observation inside the window is used, which can only understate a
  *   non-decreasing counter. If no observation inside the window carries information, 'unavailable'.
@@ -277,11 +295,15 @@ export function increment(
   if (end <= startMs) return unavailableMetric('window_not_started');
   if (video.publishedAt >= end) return mv(0, 'exact', end, 'published_after_window');
 
-  const tol = tolOf(opts);
+  const tol = Math.min(tolOf(opts), (end - startMs) * BOUNDARY_TOLERANCE_WINDOW_FRACTION);
   const maxGap = gapOf(opts, DEFAULT_MAX_INTERPOLATION_GAP_MS);
   const s = metricSeries(video, metric);
   const a = valueAtSeries(video.publishedAt, s, startMs, tol, maxGap);
   const b = valueAtSeries(video.publishedAt, s, end, tol, maxGap);
+  // With tol <= 5% of the window, one observation can never be within tolerance of both boundaries (that
+  // needs a tolerance of at least half the window), so the two snapped values always come from distinct
+  // observations, in order. A fixed 2h tolerance used to let a 26-minute window read 0 'exact' from a single
+  // observation serving as both boundaries.
   const aKnown = isKnownMetric(a);
   const bKnown = isKnownMetric(b);
 
@@ -314,6 +336,7 @@ export function increment(
     bVal = s.v[j];
     bT = s.t[j];
   }
+  // A single observation inside the window says nothing about the increase (never a fabricated 0).
   if (!(aT < bT)) return unavailableMetric(aKnown ? b.note : a.note);
   const value = bVal - aVal;
   if (value < 0) return mv(value, 'decrease_flagged', bT, 'counter_decreased');

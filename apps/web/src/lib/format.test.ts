@@ -11,6 +11,7 @@ import {
   formatMultiplier,
   formatPercent,
   formatPercentile,
+  formatAgo,
   formatRelative,
   hoursBetween,
 } from './format.ts';
@@ -117,6 +118,13 @@ describe('durations, relative time, bytes, counts', () => {
     expect(formatRelative(now - 90 * 86_400_000, now)).toBe('3개월 전');
     expect(formatRelative(now + 2 * 3_600_000, now)).toBe('2시간 후');
     expect(formatRelative(null, now)).toBe(DASH);
+  });
+  it('formatAgo never reads as the future (freshness)', () => {
+    const now = Date.UTC(2026, 8, 28, 12);
+    expect(formatAgo(now + 90_000, now)).toBe('방금');
+    expect(formatAgo(now + 2 * 3_600_000, now)).toBe('방금');
+    expect(formatAgo(now - 3 * 3_600_000, now)).toBe('3시간 전');
+    expect(formatAgo(undefined, now)).toBe(DASH);
   });
   it('hoursBetween rounds to one decimal', () => {
     expect(hoursBetween(0, 5_400_000)).toBe(1.5);

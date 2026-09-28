@@ -31,7 +31,7 @@ import {
 } from '../components/index.ts';
 import { useAnalysis, useDataset, useRangeParam, useUrlState } from '../data/hooks.ts';
 import { languageLabel } from '../lib/display.ts';
-import { CROSS_PLATFORM_CAVEAT, orderPlatforms } from '../lib/platform.ts';
+import { CROSS_PLATFORM_ADVICE, CROSS_PLATFORM_CAVEAT, orderPlatforms } from '../lib/platform.ts';
 import { enumCodec, platformListCodec } from '../lib/urlState.ts';
 import { tzShort } from '../lib/timezones.ts';
 import { emptyReason, entityDailySeries, listedKeys, spanLabel, TREND_KIND_DESCRIPTIONS, TREND_KIND_LABELS, TREND_KINDS } from '../features/trends/logic.ts';
@@ -233,7 +233,7 @@ function TrendBody({ result, stale, kind, spec, linkParams, readiness, mixedScop
         <p className="flex items-start gap-1.5 text-xs text-fg-3">
           <TriangleAlert className="mt-px size-3.5 shrink-0 text-warning" aria-hidden />
           <span>
-            여러 플랫폼 영상을 합산한 결과임. {CROSS_PLATFORM_CAVEAT} 플랫폼 필터로 하나를 고르면 같은 단위끼리 비교됨.
+            여러 플랫폼 영상을 합산한 결과임. {CROSS_PLATFORM_CAVEAT} {CROSS_PLATFORM_ADVICE.filter}
           </span>
         </p>
       ) : null}

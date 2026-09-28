@@ -28,6 +28,11 @@ import {
   stringCodec,
   toSearchString,
   valuesEqual,
+  historyModeFor,
+  historyStep,
+  SELECTION_STATE,
+  shareableHref,
+  tzParamFor,
 } from './urlState.ts';
 
 describe('codecs', () => {
@@ -201,5 +206,56 @@ describe('searchFromHash', () => {
     expect(searchFromHash('#/x?')).toEqual({ pathname: '/x', search: '' });
     expect(searchFromHash('')).toEqual({ pathname: '/', search: '' });
     expect(searchFromHash('#section')).toBeNull();
+  });
+});
+
+describe('history modes (Back behaviour)', () => {
+  it('pushes pages, treats drawers as selections and replaces filters by default', () => {
+    expect(historyModeFor('page')).toBe('push');
+    expect(historyModeFor('brand')).toBe('selection');
+    expect(historyModeFor('node')).toBe('selection');
+    expect(historyModeFor('q')).toBe('replace');
+    expect(historyModeFor('platforms')).toBe('replace');
+  });
+  it('honours explicit options; replace:false keeps a selection key a selection', () => {
+    expect(historyModeFor('q', { replace: false })).toBe('push');
+    expect(historyModeFor('page', { replace: true })).toBe('replace');
+    expect(historyModeFor('brand', { replace: false })).toBe('selection');
+    expect(historyModeFor('v', { history: 'selection' })).toBe('selection');
+    expect(historyModeFor('v')).toBe('replace');
+  });
+
+  it('open pushes a marked entry, switching replaces it, close goes back (no dead entry)', () => {
+    const open = historyStep('selection', 'v', false, true, null, true);
+    expect(open).toEqual({ kind: 'push', state: { [SELECTION_STATE]: 'v' } });
+    const marked = (open as { state: unknown }).state;
+    expect(historyStep('selection', 'v', true, true, marked, true)).toEqual({ kind: 'replace', state: { [SELECTION_STATE]: 'v' } });
+    expect(historyStep('selection', 'v', true, false, marked, true)).toEqual({ kind: 'back' });
+  });
+  it('closes by replacing when the entry was not opened in this session (shared link, other page, other change)', () => {
+    expect(historyStep('selection', 'v', true, false, null, true)).toEqual({ kind: 'replace', state: null });
+    expect(historyStep('selection', 'v', true, false, { [SELECTION_STATE]: 'brand' }, true)).toEqual({ kind: 'replace', state: null });
+    expect(historyStep('selection', 'v', true, false, { [SELECTION_STATE]: 'v' }, false)).toEqual({ kind: 'replace', state: null });
+  });
+  it('push / replace modes never go back', () => {
+    expect(historyStep('push', 'page', true, false, { [SELECTION_STATE]: 'page' }, true)).toEqual({ kind: 'push', state: null });
+    expect(historyStep('replace', 'q', true, false, { [SELECTION_STATE]: 'q' }, true)).toEqual({ kind: 'replace', state: null });
+  });
+});
+
+describe('time zone in the URL', () => {
+  it('omits tz only when it is both the default and the stored preference', () => {
+    expect(tzParamFor('Asia/Seoul', 'Asia/Seoul', 'Asia/Seoul')).toBeNull();
+    expect(tzParamFor('Australia/Sydney', 'Australia/Sydney', 'Asia/Seoul')).toBe('Australia/Sydney');
+    // A shared link opened by a viewer who stores Sydney: keep the explicit default so a reload stays in Seoul.
+    expect(tzParamFor('Asia/Seoul', 'Australia/Sydney', 'Asia/Seoul')).toBe('Asia/Seoul');
+  });
+  it('shareableHref always names the zone and keeps the rest of the view', () => {
+    expect(shareableHref('http://x/#/videos?platforms=youtube&range=last7d', 'Australia/Sydney')).toBe(
+      'http://x/#/videos?platforms=youtube&range=last7d&tz=Australia%2FSydney',
+    );
+    expect(shareableHref('http://x/#/videos?tz=UTC&range=yesterday', 'Asia/Seoul')).toBe('http://x/#/videos?tz=Asia%2FSeoul&range=yesterday');
+    expect(shareableHref('http://x/#/', 'Asia/Seoul')).toBe('http://x/#/?tz=Asia%2FSeoul');
+    expect(shareableHref('http://x/', 'Asia/Seoul')).toBe('http://x/');
   });
 });

@@ -115,6 +115,25 @@ describe('summarizeCreators: merged portfolios', () => {
     expect(by(all, 'c2').medianV7).toMatchObject({ status: 'unavailable', note: 'no_tracked_videos' });
   });
 
+  it('engagement sort ranks only medians over enough videos and views; niconico comments are left out', () => {
+    const big = [0, 1, 2].map((i) =>
+      makeVideo({ id: `youtube:big${i}`, accountId: 'youtube:big', publishedAt: ts('2026-08-01'), obs: [obsOf(w.endMs - H, { views: 10_000, likes: 300 })] }),
+    );
+    const tiny = makeVideo({ id: 'dailymotion:tiny', accountId: 'dailymotion:tiny', publishedAt: ts('2026-08-01'), obs: [obsOf(w.endMs - H, { views: 6, likes: 4 })] });
+    const nico = [0, 1, 2].map((i) =>
+      makeVideo({ id: `niconico:sm${i}`, accountId: 'niconico:user/1', platform: 'niconico', publishedAt: ts('2026-08-01'), obs: [obsOf(w.endMs - H, { views: 2_458, likes: 132, comments: 7_103 })] }),
+    );
+    const idx = makeIndex({ videos: [...big, tiny, ...nico], generatedAt: NOW });
+    const list = summarizeCreators(idx, opts({ sort: 'engagement' }));
+    expect(list.map((s) => s.key)).toEqual(['niconico:user/1', 'youtube:big', 'dailymotion:tiny']);
+    // niconico: likes / views only (comments are on-video timeline comments), not 294%
+    expect(by(list, 'niconico:user/1').engagementRate.value).toBeCloseTo(132 / 2_458, 9);
+    // 1 video with 6 views: shown, but last and marked
+    expect(by(list, 'dailymotion:tiny').engagementRate).toMatchObject({ status: 'exact', note: 'small_sample' });
+    expect(by(list, 'dailymotion:tiny').engagementRate.value).toBeCloseTo(4 / 6, 9);
+    expect(by(list, 'youtube:big').engagementRate).toMatchObject({ value: 0.03, note: 'median_of_videos' });
+  });
+
   it('sorts (default views_period) with unrankable values last and a stable tie-break', () => {
     expect(all.map((s) => s.key)).toEqual(['youtube:solo', 'c1', 'c2', 'youtube:shrink', 'x:xacc']);
     expect(summarizeCreators(index, opts({ sort: 'followers' })).map((s) => s.key)).toEqual(['c1', 'youtube:shrink', 'x:xacc', 'c2', 'youtube:solo']);
@@ -174,12 +193,16 @@ describe('portfolios', () => {
     expect(s.viewsInWindow).toMatchObject({ value: 11, status: 'exact' });
   });
 
-  it('accountFollowerGrowth: partial windows are flagged, missing data is null', () => {
+  it('accountFollowerGrowth: a partial window is unknown (followers go down too, so it is no lower bound), missing data is null', () => {
     expect(accountFollowerGrowth(makeAccount({ followers: [] }), w, NOW)).toBeNull();
     const partial = makeAccount({ followers: [fp(w.startMs + D, 100), fp(w.startMs + 3 * D, 160)] });
-    expect(accountFollowerGrowth(partial, w, NOW)).toMatchObject({ value: 60, status: 'lower_bound' });
+    expect(accountFollowerGrowth(partial, w, NOW)).toMatchObject({ value: null, status: 'unavailable', note: 'before_first_observation' });
     const partialDown = makeAccount({ followers: [fp(w.startMs + D, 100), fp(w.startMs + 3 * D, 60)] });
-    expect(accountFollowerGrowth(partialDown, w, NOW)).toMatchObject({ value: -40, status: 'decrease_flagged' });
+    expect(accountFollowerGrowth(partialDown, w, NOW)).toMatchObject({ value: null, status: 'unavailable' });
+    // two points 10 minutes apart before now, rolling 24h: not a ranked '>= 100'
+    const recent = makeAccount({ id: 'youtube:acc-recent', followers: [fp(NOW - 10 * 60_000, 1_000), fp(NOW, 1_100)] });
+    const day = { startMs: NOW - 24 * H, endMs: NOW, tz: SEOUL, incomplete: false };
+    expect(accountFollowerGrowth(recent, day, NOW)!.status).toBe('unavailable');
     const notStarted = resolveWindow({ start: '2026-12-01', end: '2026-12-02' }, SEOUL, NOW);
     expect(accountFollowerGrowth(partial, notStarted, NOW)).toMatchObject({ status: 'unavailable', note: 'window_not_started' });
   });
@@ -224,8 +247,10 @@ describe('creatorTimeline', () => {
     // 09-24: the new video starts at 0 on its publish day (known by definition) and adds 50
     expect(tl[3].byPlatform.youtube).toMatchObject({ value: 150, status: 'exact' });
     expect(tl[4].byPlatform.youtube).toMatchObject({ value: 200, status: 'exact' });
-    // today (clipped to now), then a day that has not started
-    expect(tl[7].byPlatform.youtube).toMatchObject({ value: 0, status: 'exact' });
+    // today (clipped to now = 01:00): the only observation is the one at 00:00, so nothing is known about the
+    // increase since midnight (never a fabricated exact 0 from one observation serving both boundaries);
+    // then a day that has not started
+    expect(tl[7].byPlatform.youtube).toMatchObject({ value: null, status: 'unavailable' });
     expect(tl[8].byPlatform.youtube).toMatchObject({ value: null, status: 'unavailable', note: 'window_not_started' });
     // a platform without tracked videos is 0 of OUR tracked views, not unknown
     expect(tl[0].byPlatform.peertube).toMatchObject({ value: 0, status: 'exact', note: 'no_tracked_videos' });

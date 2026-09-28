@@ -7,15 +7,29 @@ import { SampleBanner } from './SampleBanner.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { TopBar } from './TopBar.tsx';
 
+/** Top-bar title of a route: the nav label, `UI 카탈로그`, or `페이지 없음` for unknown paths. */
+export function shellTitle(pathname: string): string {
+  const item = navItemFor(pathname);
+  return item?.label ?? (pathname === '/ui-kit' ? 'UI 카탈로그' : '페이지 없음');
+}
+
+/** Browser tab title: `영상 탐색 · 앱 이름`, `페이지 없음 · 앱 이름` (unknown routes), the app name on the dashboard. */
+export function documentTitle(pathname: string): string {
+  const item = navItemFor(pathname);
+  if (item?.path === '/') return APP_NAME;
+  return `${shellTitle(pathname)} · ${APP_NAME}`;
+}
+
 /**
  * App layout: fixed sidebar >= 1024px, drawer navigation below; sample banner; sticky top bar;
  * route content inside an error boundary (reset on navigation) and Suspense (lazy pages).
+ * The shell renders before the dataset has loaded (data pages wait under <RequireDataset>).
  */
 export function AppShell() {
   const location = useLocation();
   const [navOpen, setNavOpen] = useState(false);
   const item = navItemFor(location.pathname);
-  const title = item?.label ?? (location.pathname === '/ui-kit' ? 'UI 카탈로그' : '페이지 없음');
+  const title = shellTitle(location.pathname);
 
   // Close the drawer on navigation and when the viewport grows to desktop.
   useEffect(() => setNavOpen(false), [location.pathname]);
@@ -31,7 +45,7 @@ export function AppShell() {
 
   // Page title + scroll to top on route change (not on query-string changes).
   useEffect(() => {
-    document.title = item && item.path !== '/' ? `${item.label} · ${APP_NAME}` : APP_NAME;
+    document.title = documentTitle(location.pathname);
     window.scrollTo({ top: 0 });
   }, [location.pathname, item]);
 

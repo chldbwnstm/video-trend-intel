@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeOpportunities, resolveExplorePlatform } from '../src/explore.ts';
 import type { ExploreOptions } from '../src/explore.ts';
 import type { Platform, Video } from '../src/types.ts';
-import { HOUR_MS, makeIndex, makeObs, makeVideo, ts } from './fixtures.ts';
+import { HOUR_MS, makeAccount, makeIndex, makeObs, makeVideo, ts } from './fixtures.ts';
 
 const H = HOUR_MS;
 const SEOUL = 'Asia/Seoul';
@@ -12,10 +12,13 @@ const RANGE = { start: '2026-09-01', end: '2026-09-27' };
 const cat = (id: string) => ({ id, confidence: 0.9, evidence: [], by: 'rule' as const, version: 'test' });
 
 let seq = 0;
+/** An upload in the window; uploads rotate over three channels unless an account is given. */
 function up(topic: string | string[], views: number | null, extra: Partial<Video> & { platform?: Platform } = {}): Video {
   const platform = extra.platform ?? 'youtube';
+  const n = ++seq;
   return makeVideo({
-    id: `${platform}:e${++seq}`,
+    id: `${platform}:e${n}`,
+    accountId: `${platform}:ch${n % 3}`,
     publishedAt: ts('2026-09-10'),
     topics: Array.isArray(topic) ? topic : [topic],
     obs: [makeObs(ts('2026-09-10T06:00Z'), views === null ? null : Math.floor(views / 10), 1), makeObs(NOW - H, views, 2)],
@@ -76,7 +79,12 @@ describe('computeOpportunities', () => {
 
   it('minSupply (default 3), limit, category and language filters', () => {
     expect(computeOpportunities(index, opts()).some((x) => x.topic === 'd')).toBe(false);
+    // the account minimum defaults to min(3, minSupply)
     expect(computeOpportunities(index, opts({ minSupply: 2 })).find((x) => x.topic === 'd')).toMatchObject({ demand: 55_000, supply: 2 });
+    const one = [1, 2, 3].map((v) => up('solo', v * 100, { accountId: 'youtube:only' }));
+    const idx1 = makeIndex({ videos: one, generatedAt: NOW });
+    expect(computeOpportunities(idx1, opts())).toEqual([]);
+    expect(computeOpportunities(idx1, opts({ minSupply: 1 })).map((x) => x.topic)).toEqual(['solo']);
     expect(computeOpportunities(index, opts({ limit: 1 })).map((x) => x.topic)).toEqual(['c']);
     expect(computeOpportunities(index, opts({ categories: ['gaming'] })).map((x) => x.topic)).toEqual(['c']);
     expect(computeOpportunities(index, opts({ languages: ['KO'] })).map((x) => x.topic)).toEqual(['c']);
@@ -94,12 +102,37 @@ describe('computeOpportunities', () => {
   });
 
   it('a video counts once per topic even if the topic is repeated; multi-topic videos feed each topic', () => {
-    const vs = [up(['m', 'm', 'n'], 10), up(['m', 'n'], 20), up(['m', 'n'], 30)];
+    const vs = [up(['m', 'm', 'n'], 10), up(['m', 'n'], 20), up(['m', 'n'], 30), up('n', 40)];
     const r = computeOpportunities(makeIndex({ videos: vs, generatedAt: NOW }), opts());
+    // equal scores (0): the higher demand first
     expect(r.map((x) => [x.topic, x.supply, x.demand])).toEqual([
+      ['n', 4, 25],
       ['m', 3, 20],
-      ['n', 3, 20],
     ]);
+  });
+
+  it('topics with exactly the same videos are one opportunity (the most used tag, others as aliases)', () => {
+    const pair = [10, 20, 30].map((v) => up(['코믹숏무비', '너덜트'], v));
+    const elsewhere = up('너덜트', 5, { publishedAt: ts('2026-09-11'), platform: 'dailymotion' }); // '너덜트' is used more widely
+    const other = [100, 200, 300].map((v) => up('other', v));
+    const r = computeOpportunities(makeIndex({ videos: [...pair, elsewhere, ...other], generatedAt: NOW }), opts());
+    expect(r.map((x) => x.topic).sort()).toEqual(['other', '너덜트']);
+    expect(r.find((x) => x.topic === '너덜트')).toMatchObject({ aliases: ['코믹숏무비'], supply: 3, demand: 20 });
+    expect(r.find((x) => x.topic === 'other')!.aliases).toEqual([]);
+    // percentiles are computed over the merged list (2 items)
+    expect(r.map((x) => x.demandPercentile).sort((a, b) => a - b)).toEqual([25, 75]);
+  });
+
+  it('needs uploads from several channels (default 3); generic tags and self tags are not topics', () => {
+    const accounts = [0, 1, 2].map((i) => makeAccount({ id: `youtube:ch${i}`, name: i === 0 ? '노트펫' : `채널 ${i}`, handle: i === 0 ? '@notepet' : null }));
+    const oneChannel = [100, 200, 300].map((v) => up('my-series', v, { accountId: 'youtube:ch1' }));
+    const twoChannels = [100, 200, 300].map((v, i) => up('duo', v, { accountId: `youtube:ch${i % 2}` }));
+    const shared = [100, 200, 300].map((v) => up(['강아지', '뉴스', 'notepet'], v));
+    const idx = makeIndex({ videos: [...oneChannel, ...twoChannels, ...shared], accounts, generatedAt: NOW });
+    expect(computeOpportunities(idx, opts()).map((x) => x.topic)).toEqual(['강아지']);
+    expect(computeOpportunities(idx, opts({ minAccounts: 2 })).map((x) => x.topic).sort()).toEqual(['duo', '강아지']);
+    // 'notepet' is 노트펫's own handle on one of the three videos: only two remain, below minSupply
+    expect(computeOpportunities(idx, opts({ minAccounts: 1 })).map((x) => x.topic).sort()).toEqual(['duo', 'my-series', '강아지']);
   });
 
   it('a still-running window only counts uploads up to now; later observations are ignored', () => {
@@ -114,7 +147,7 @@ describe('computeOpportunities', () => {
 
   it('latest views fall back to the latest earlier observation (lower bound) when nothing is observed at now', () => {
     const stale = [1, 2, 3].map((i) =>
-      makeVideo({ id: `youtube:st${i}`, topics: ['s'], publishedAt: ts('2026-09-05'), obs: [makeObs('2026-09-06', 10 * i), makeObs('2026-09-15', 100 * i)] }),
+      makeVideo({ id: `youtube:st${i}`, accountId: `youtube:stch${i}`, topics: ['s'], publishedAt: ts('2026-09-05'), obs: [makeObs('2026-09-06', 10 * i), makeObs('2026-09-15', 100 * i)] }),
     );
     const r = computeOpportunities(makeIndex({ videos: stale, generatedAt: NOW }), opts());
     expect(r[0]).toMatchObject({ topic: 's', demand: 200, supply: 3 });

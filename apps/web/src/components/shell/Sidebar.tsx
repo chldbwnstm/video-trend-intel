@@ -2,13 +2,14 @@ import { NavLink } from 'react-router-dom';
 import { Activity } from 'lucide-react';
 import { cx } from '../../lib/cx.ts';
 import { APP_NAME, NAV_SECTIONS } from '../../routes.ts';
-import { useDataset } from '../../data/hooks.ts';
+import { useOptionalDataset, useTz } from '../../data/hooks.ts';
 import { fmtTime } from '../../lib/display.ts';
 import { tzShort } from '../../lib/timezones.ts';
 
 /** Left navigation (fixed on desktop, inside a Drawer below 1024px). */
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { dataset, now, tz, isSample } = useDataset();
+  const ds = useOptionalDataset();
+  const tz = useTz();
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-fg">
       <div className="flex h-14 shrink-0 items-center gap-2.5 border-b border-sidebar-line px-4">
@@ -53,13 +54,19 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </nav>
       <div className="shrink-0 border-t border-sidebar-line px-4 py-3 text-[11px] leading-relaxed text-sidebar-fg opacity-80">
-        <p>
-          데이터 기준 {fmtTime(now, tz)} {tzShort(tz)}
-        </p>
-        <p>
-          영상 {dataset.videos.length.toLocaleString('ko-KR')} · 계정 {dataset.accounts.length.toLocaleString('ko-KR')} · 분류 {dataset.classifierVersion}
-        </p>
-        {isSample ? <p className="font-semibold text-[var(--sample-line)]">샘플 데이터 사용 중</p> : null}
+        {ds ? (
+          <>
+            <p>
+              데이터 기준 {fmtTime(ds.now, tz)} {tzShort(tz)}
+            </p>
+            <p>
+              영상 {ds.dataset.videos.length.toLocaleString('ko-KR')} · 계정 {ds.dataset.accounts.length.toLocaleString('ko-KR')} · 분류 {ds.dataset.classifierVersion}
+            </p>
+            {ds.isSample ? <p className="font-semibold text-[var(--sample-line)]">샘플 데이터 사용 중</p> : null}
+          </>
+        ) : (
+          <p>데이터 불러오는 중</p>
+        )}
       </div>
     </div>
   );

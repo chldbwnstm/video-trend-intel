@@ -82,7 +82,7 @@ function scrollToSection(id: string) {
 export default function CoveragePage() {
   const { dataset, now, tz, isSample } = useDataset();
   const summary = useMemo(() => coverageSummary(dataset), [dataset]);
-  const sources = useMemo(() => sourceRows(dataset.coverage ?? [], now), [dataset, now]);
+  const sources = useMemo(() => sourceRows(dataset.coverage ?? [], now, dataset.runs ?? []), [dataset, now]);
   const runs = useMemo(() => sortRuns(dataset.runs ?? []), [dataset]);
   const runStats = useMemo(() => runSummary(dataset.runs ?? [], now), [dataset, now]);
   const depth = useMemo(() => observationDepth(dataset), [dataset]);

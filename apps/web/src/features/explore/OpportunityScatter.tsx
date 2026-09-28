@@ -1,7 +1,7 @@
 /**
  * Demand vs supply scatter: x = supply percentile, y = demand percentile, bubble area = supply (uploads in
  * our tracked set). Quadrants split at the 50th percentile; the upper-left one (수요↑ 공급↓) is the
- * opportunity area. One series color, the selected topic in a second color with a direct label and a ring.
+ * opportunity area. Quadrant names sit outside the plot (above / below it) so bubbles never hide them. One series color, the selected topic in a second color with a direct label and a ring.
  * The ranked table on the page is the table twin.
  */
 import { useMemo } from 'react';
@@ -33,17 +33,28 @@ const axis = {
   tickLine: false,
 } as const;
 
-const quadrantLabel = (value: string, position: 'insideTopLeft' | 'insideTopRight' | 'insideBottomLeft' | 'insideBottomRight', strong = false) => ({
-  value,
-  position,
-  fill: strong ? 'var(--accent-text)' : 'var(--chart-text)',
-  fontSize: 11,
-  fontWeight: strong ? 600 : 500,
-  // Halo so the label stays legible over dense points.
-  stroke: 'var(--surface)',
-  strokeWidth: 3,
-  paintOrder: 'stroke',
-});
+/** Plot margins; the quadrant label rows outside the plot use the same left/right insets. */
+const MARGIN = { top: 24, right: 16, bottom: 18, left: 0 } as const;
+const Y_AXIS_WIDTH = 44;
+
+/**
+ * Quadrant names in a row above (upper quadrants) or below (lower quadrants) the plot, one per half, aligned
+ * with the plot area. Drawn outside the chart so dense bubbles never cover them.
+ */
+function QuadrantRow({ left, right, strongLeft = false, below = false }: { left: string; right: string; strongLeft?: boolean; below?: boolean }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 text-[11px] font-medium text-fg-3" style={{ paddingLeft: MARGIN.left + Y_AXIS_WIDTH, paddingRight: MARGIN.right }}>
+      <span className={strongLeft ? 'font-semibold text-accent-text' : undefined}>
+        <span aria-hidden>{below ? '↙' : '↖'} </span>
+        {left}
+      </span>
+      <span className="text-right">
+        {right}
+        <span aria-hidden> {below ? '↘' : '↗'}</span>
+      </span>
+    </div>
+  );
+}
 
 export function OpportunityScatter({ items, selected, onSelect, height = 340, platformLabel }: OpportunityScatterProps) {
   const points = useMemo<Point[]>(
@@ -71,13 +82,11 @@ export function OpportunityScatter({ items, selected, onSelect, height = 340, pl
           </span>
         ) : null}
       </figcaption>
-      <div role="img" aria-label={`${platformLabel} 주제별 수요 백분위(세로)와 공급 백분위(가로) 산점도. 값은 아래 표로 볼 수 있음.`}>
-        <ScatterChart responsive style={{ width: '100%', height }} margin={{ top: 28, right: 16, bottom: 18, left: 0 }}>
+      <QuadrantRow left={QUADRANT_LABELS.opportunity} right={QUADRANT_LABELS.competitive} strongLeft />
+      <div role="img" aria-label={`${platformLabel} 주제별 수요 백분위(세로)와 공급 백분위(가로) 산점도. 왼쪽 위 ${QUADRANT_LABELS.opportunity}, 오른쪽 위 ${QUADRANT_LABELS.competitive}, 왼쪽 아래 ${QUADRANT_LABELS.niche}, 오른쪽 아래 ${QUADRANT_LABELS.saturated}. 값은 아래 표로 볼 수 있음.`}>
+        <ScatterChart responsive style={{ width: '100%', height }} margin={MARGIN}>
           <CartesianGrid stroke="var(--chart-grid)" />
-          <ReferenceArea x1={0} x2={50} y1={50} y2={100} fill="var(--accent-soft)" fillOpacity={0.7} stroke="none" label={quadrantLabel(QUADRANT_LABELS.opportunity, 'insideTopLeft', true)} />
-          <ReferenceArea x1={50} x2={100} y1={50} y2={100} fillOpacity={0} stroke="none" label={quadrantLabel(QUADRANT_LABELS.competitive, 'insideTopRight')} />
-          <ReferenceArea x1={0} x2={50} y1={0} y2={50} fillOpacity={0} stroke="none" label={quadrantLabel(QUADRANT_LABELS.niche, 'insideBottomLeft')} />
-          <ReferenceArea x1={50} x2={100} y1={0} y2={50} fillOpacity={0} stroke="none" label={quadrantLabel(QUADRANT_LABELS.saturated, 'insideBottomRight')} />
+          <ReferenceArea x1={0} x2={50} y1={50} y2={100} fill="var(--accent-soft)" fillOpacity={0.7} stroke="none" />
           <ReferenceLine x={50} stroke="var(--chart-axis)" strokeDasharray="4 4" />
           <ReferenceLine y={50} stroke="var(--chart-axis)" strokeDasharray="4 4" />
           <XAxis
@@ -93,7 +102,7 @@ export function OpportunityScatter({ items, selected, onSelect, height = 340, pl
             dataKey="y"
             domain={[0, 100]}
             ticks={[0, 25, 50, 75, 100]}
-            width={44}
+            width={Y_AXIS_WIDTH}
             {...axis}
             label={{ value: '수요 백분위 →', angle: -90, position: 'insideLeft', offset: 12, fill: 'var(--chart-text)', fontSize: 11 }}
           />
@@ -141,6 +150,7 @@ export function OpportunityScatter({ items, selected, onSelect, height = 340, pl
           ) : null}
         </ScatterChart>
       </div>
+      <QuadrantRow left={QUADRANT_LABELS.niche} right={QUADRANT_LABELS.saturated} below />
     </figure>
   );
 }

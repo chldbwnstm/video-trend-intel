@@ -38,14 +38,34 @@ describe('design doc §5 worked example (A/B/C) end-to-end', () => {
     const r = queryVideos(index, q({ dateMode: 'upload', range: SEP, sort: 'views_total', now }));
     expect(ids(r)).toEqual(['youtube:B', 'youtube:C']);
     expect(r.total).toBe(2);
-    expect(r.rows[0].metrics.viewsTotal).toMatchObject({ value: 2_000_000, status: 'exact', asOf: sep.endMs });
+    // latest value as of now (last observed 9h before now, so a lower bound), not the value at the window end
+    expect(r.rows[0].metrics.viewsTotal).toMatchObject({ value: 2_000_000, status: 'lower_bound', asOf: sep.endMs });
     expect(r.window).toEqual(sep);
     expect(r.window!.incomplete).toBe(false);
     expect(r.notes[0]).toContain('업로드 기간 기준');
     expect(r.notes[0]).toContain('2026-09-01~2026-09-30(Asia/Seoul)');
-    expect(r.notes[0]).toContain('2026-10-01 00:00 (Asia/Seoul) 기준');
-    // views since publish as of the window end ranks the same way
+    expect(r.notes[0]).toContain('데이터 기준 시각 2026-10-02 09:00 (Asia/Seoul)의 최신 값');
+    expect(r.notes[0]).toContain('기간이 끝난 뒤 늘어난 조회도 포함');
+    // views since publish as of now ranks the same way
     expect(ids(queryVideos(index, q({ dateMode: 'upload', range: SEP, sort: 'views_period', now })))).toEqual(['youtube:B', 'youtube:C']);
+  });
+
+  it('upload mode ranks a finished past window by current views even without observations near its end', () => {
+    // Both videos were discovered weeks after August ended (one observation each, 13 minutes before now).
+    const at = ts('2026-09-28T15:26Z');
+    const a = makeVideo({ id: 'youtube:a5m', publishedAt: ts('2026-08-10'), obs: [makeObs(ts('2026-09-28T15:13Z'), 5_000_000)] });
+    const b = makeVideo({ id: 'youtube:b20k', publishedAt: ts('2026-08-20'), obs: [makeObs(ts('2026-09-28T15:13Z'), 20_000)] });
+    const late = makeVideo({ id: 'youtube:none', publishedAt: ts('2026-08-25'), obs: [obsOf(ts('2026-09-28T15:13Z'), { likes: 3 })] });
+    const idx = makeIndex({ videos: [b, late, a], generatedAt: at });
+    const r = queryVideos(idx, q({ dateMode: 'upload', range: { start: '2026-08-01', end: '2026-08-31' }, sort: 'views_total', now: at }));
+    expect(ids(r)).toEqual(['youtube:a5m', 'youtube:b20k', 'youtube:none']);
+    expect(r.rows.map((x) => x.metrics.viewsTotal.status)).toEqual(['exact', 'exact', 'unavailable']);
+    expect(r.rows[0].metrics.percentile.value).not.toBeNull();
+    // minViews uses the same current value
+    expect(ids(queryVideos(idx, q({ dateMode: 'upload', range: { start: '2026-08-01', end: '2026-08-31' }, sort: 'views_total', now: at, minViews: 100_000 })))).toEqual(['youtube:a5m']);
+    // activity mode keeps window-end values: nothing is readable at 2026-09-01 00:00
+    const act = queryVideos(idx, q({ dateMode: 'activity', range: { start: '2026-08-01', end: '2026-08-31' }, sort: 'views_total', now: at }));
+    expect(act.rows.every((x) => x.metrics.viewsTotal.status === 'unavailable')).toBe(true);
   });
 
   it('activity mode for September ranks A first (5,000,000 > 2,000,000 > 800,000)', () => {
@@ -535,6 +555,26 @@ describe('notes: provenance counts', () => {
 });
 
 /* ------------------------------------------------------------------------------------------ */
+
+describe('short and rolling windows', () => {
+  // dataset exported at 2026-09-29 00:26 KST; the first collection of the day ran at 00:13
+  const at = ts('2026-09-28T15:26Z');
+  const v = makeVideo({ id: 'youtube:f2oMCIMHYMg', publishedAt: ts('2026-02-08T15:00Z'), obs: [makeObs(ts('2026-09-28T15:13Z'), 14_444_825)] });
+  const idx = makeIndex({ videos: [v], generatedAt: at });
+
+  it("'today' after midnight does not report exact-zero increases from one observation", () => {
+    const r = queryVideos(idx, q({ dateMode: 'activity', range: { start: '2026-09-29', end: '2026-09-29' }, sort: 'views_period', now: at }));
+    const m = r.rows[0].metrics.viewsPeriod;
+    expect(m.status === 'exact' && m.value === 0).toBe(false);
+    expect(r.rows[0].metrics.growthVsPrev.status).toBe('unavailable');
+  });
+
+  it('rolling windows are described with date-times, not as calendar days', () => {
+    const r = queryVideos(idx, q({ dateMode: 'activity', rollingHours: 24, sort: 'views_period', now: at }));
+    expect(r.notes[0]).toContain('2026-09-28 00:26 ~ 2026-09-29 00:26 (Asia/Seoul)');
+    expect(r.notes[0]).not.toContain('2026-09-28~2026-09-29(Asia/Seoul)');
+  });
+});
 
 describe('indexAsOf', () => {
   const now = ts('2026-09-20T00:00Z');

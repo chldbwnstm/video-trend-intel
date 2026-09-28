@@ -7,24 +7,31 @@
  *
  * Matching rules
  * - All text is normalized with `normalizeText` (NFKC + lowercase + collapsed whitespace).
- * - ASCII keywords ('kpop', 'ai', 'how to') match on Latin word boundaries (an optional plural `s`/`es` is
- *   allowed; inside hashtags and tags, keywords of 7+ chars may also be glued to a following word, e.g.
- *   '#skincareroutine', but never in prose: 'mechanic' does not match 'mechanical').
+ * - ASCII keywords ('kpop', 'ai', 'how to') match on Latin word boundaries (an optional plural `s` is allowed,
+ *   and `es` only after s / x / z / ch / sh / o, so 'car' does not match 'cares'; inside hashtags and tags,
+ *   keywords of 7+ chars may also be glued to a following word, e.g. '#skincareroutine', but never in prose:
+ *   'mechanic' does not match 'mechanical').
  * - Korean/Japanese (non-ASCII) keywords match as substrings, except where a known false-positive trap word
  *   (KEYWORD_TRAPS, e.g. '토너' inside '토너먼트') covers the occurrence. A keyword containing spaces also
  *   matches with the spaces removed ('나 혼자 산다' ~ '나혼자산다').
  *
  * Scoring (per taxonomy node, subcategory hits also count for the parent)
- * - source category mapping: 0.9 (0.7 for broad catch-all source categories), by 'source'
- * - account / YouTube channel seed category: 0.6, by 'account'
+ * - source category mapping: 0.9 (0.7 for broad catch-all source categories), by 'source'. Uploader-chosen
+ *   categories that proved unreliable (Dailymotion 'tv' / 'fun' / 'people' / 'lifestyle' / 'auto' / 'tech': news
+ *   outlets file items under 'auto' or 'tv') count only 0.6 unless a keyword of the same top-level family
+ *   corroborates them.
+ * - account / YouTube channel seed category: 0.7, by 'account' (a single ambiguous title keyword, 0.63,
+ *   cannot outrank what the channel is known to be about).
  * - keyword hits: title 1.0, tags 0.8, description 0.4 per distinct keyword (best field wins);
  *   rule confidence = 1 - e^(-sum), only counted when the sum >= 0.8 (one title/tag hit or two description hits)
  * - signals combine as a noisy-or, capped at 0.99. At most 3 top-level families and 3 subcategories per family.
+ * - A secondary family backed only by a weak rule (keyword sum < 1.2: one title or tag word, about 50% precise
+ *   on real data) is dropped when another family has a source or account signal.
  */
 import type { CategoryAssignment, Evidence, TaxonomyNode } from './types.ts';
 import { extractHashtags, isAsciiKeyword, isLatinWordChar, normalizeText } from './text.ts';
 
-export const CLASSIFIER_VERSION = 'rules-2026.09.1';
+export const CLASSIFIER_VERSION = 'rules-2026.09.2';
 
 /** Top-level ids are FIXED (seed files reference them). Subcategory ids are `${top}/${slug}`. */
 export const TOP_LEVEL_CATEGORY_IDS = [
@@ -535,7 +542,8 @@ export const TAXONOMY: TaxonomyNode[] = [
   /* ------------------------------------------------------------------ how-to & DIY */
   top('howto_diy', '하우투·DIY', 'How-to & DIY',
     'diy|만들기|꿀팁|하는 법|하는법|how to|how-to|tutorial|tutorials|やり方|作り方|ハウツー|使い方',
-    ['peertube:How To', 'dailymotion:creation', ...yt(26)]),
+    // 'dailymotion:creation' is not mapped: on real data it holds toy ads, TV clips and spam, rarely how-to.
+    ['peertube:How To', ...yt(26)]),
   sub('howto_diy', 'crafts', '공예·핸드메이드', 'Crafts & Handmade',
     '공예|뜨개질|코바늘|프랑스자수|자수 도안|재봉틀|바느질|레진아트|키링 만들기|diy 소품|handmade|crafts|knitting|crochet|embroidery|sewing|origami|' +
       '手芸|編み物|刺繍|ハンドメイド|折り紙|レジン'),
@@ -568,6 +576,7 @@ export const KEYWORD_TRAPS: Record<string, string[]> = {
   단발: ['단발성'],
   염색: ['염색체'],
   네일: ['썸네일'],
+  ネイル: ['サムネイル'],
   반지: ['반지의 제왕'],
   指輪: ['指輪物語'],
   하울: ['하울의 움직이는 성', '하울의'],
@@ -583,6 +592,9 @@ export const KEYWORD_TRAPS: Record<string, string[]> = {
   game: [
     'squid game', 'game changer', 'game of thrones', 'olympic games', 'asian games', 'commonwealth games', 'hunger games',
     'game day', 'ball game', 'mind game', 'blame game', 'waiting game', 'name of the game', 'game show',
+    // sports match reports ('NFL Game Highlights', '403-yard game')
+    'game highlights', 'game recap', 'preseason game', 'playoff game', 'yard game', 'td game', 'player of the game',
+    'game-winning', 'game winning', 'game winner', 'home game', 'away game', 'bowl game', 'comm games',
   ],
   ゲーム: ['イカゲーム'],
   実況: ['実況中継', '実況アナ'],
@@ -604,6 +616,8 @@ export const KEYWORD_TRAPS: Record<string, string[]> = {
   // news
   시사: ['시사회', '시사점'],
   news: ['good news', 'bad news'],
+  뉴스: ['톱스타뉴스'],
+  전쟁: ['연애전쟁', '연애 전쟁', '여자전쟁', '남자전쟁', '부부전쟁', '고부전쟁', '가격전쟁', '가격 전쟁', '와의 전쟁', '과의 전쟁', '관리와 전쟁'],
   화재: ['문화재'],
   투표: ['인기투표', '인기 투표', '팬투표', '팬 투표'],
   投票: ['人気投票'],
@@ -629,7 +643,7 @@ export const KEYWORD_TRAPS: Record<string, string[]> = {
   호텔: ['호텔 델루나', '호텔델루나'],
   hotel: ['hotel california'],
   resort: ['last resort'],
-  interior: ['car interior'],
+  interior: ['car interior', 'interior exterior', 'interior and exterior', 'interior & exterior'],
   청소: ['청소년'],
   자취: ['자취를 감', '발자취'],
   식물: ['식물성', '식물인간'],
@@ -663,7 +677,8 @@ export const KEYWORD_TRAPS: Record<string, string[]> = {
   요가: ['필요가', '중요가'],
   러닝: ['머신러닝', '딥러닝', 'e러닝', '이러닝'],
   의사: ['의사결정', '의사 결정', '의사소통', '의사표현', '의사 표현', '의사표시', '의사 표시', '의사진행'],
-  병원: ['동물병원'],
+  병원: ['동물병원', '고양이 병원', '강아지 병원', '반려동물 병원'],
+  명상: ['치명상'],
   病院: ['動物病院'],
   doctor: ['doctor who', 'doctor strange'],
   marathon: ['movie marathon', 'netflix marathon'],
@@ -766,7 +781,38 @@ export function categoryPathLabel(id: string, lang: 'ko' | 'en' = 'ko', sep = ' 
 
 export const SOURCE_CONFIDENCE = 0.9;
 export const BROAD_SOURCE_CONFIDENCE = 0.7;
-export const ACCOUNT_CONFIDENCE = 0.6;
+/**
+ * Account / channel seed evidence. Above a single title keyword hit (1 - e^-1 = 0.63): one ambiguous word
+ * ('game' in an NFL recap, '명상' in '치명상') must not outrank what the channel is known to be about.
+ */
+export const ACCOUNT_CONFIDENCE = 0.7;
+/**
+ * Uploader-chosen source categories that proved unreliable are counted at this confidence (below a single
+ * title keyword) unless a keyword of the same top-level family corroborates them. On Dailymotion 41% of top-1
+ * labels came only from the channel field and about 22% of those were wrong, concentrated in the generic
+ * channels and in channels news outlets misuse (MBN News items under 'auto', ABC News Australia under 'tv',
+ * Ukraine reports under 'tech', swimming lessons under 'people').
+ */
+export const UNCORROBORATED_SOURCE_CONFIDENCE = 0.6;
+/**
+ * Source categories that need corroboration (see UNCORROBORATED_SOURCE_CONFIDENCE). Dailymotion's specific
+ * channels (news, music, videogames, kids, sport, ...) stay trusted: on real data, overriding them with a single
+ * title word was wrong about half the time ('골프 의혹' in a news report is not sports).
+ */
+export const UNCORROBORATED_SOURCE_CATEGORIES: readonly string[] = [
+  'dailymotion:tv',
+  'dailymotion:fun',
+  'dailymotion:people',
+  'dailymotion:lifestyle',
+  'dailymotion:auto',
+  'dailymotion:tech',
+];
+/**
+ * Keyword sum below which a rule-only family counts as weak (one title word 1.0, or one tag word 0.8, or two
+ * description words): such a family is not kept as a secondary label next to a family with source / account
+ * evidence (single ambiguous hits were about 52% precise on real data).
+ */
+export const WEAK_RULE_SUM = 1.2;
 export const FIELD_WEIGHTS = { title: 1.0, tags: 0.8, description: 0.4 } as const;
 /** Minimum summed keyword weight for a rule assignment (one title or tag hit, or two description hits). */
 export const MIN_RULE_SCORE = 0.8;
@@ -794,6 +840,8 @@ interface Compiled {
   ascii: Map<number, KeywordEntry[]>;
   /** normalized source category -> node ids + confidence */
   sources: Map<string, { ids: string[]; confidence: number }>;
+  /** normalized source categories that need keyword corroboration */
+  uncorroborated: Set<string>;
 }
 
 let compiled: Compiled | null = null;
@@ -856,7 +904,7 @@ function compile(): Compiled {
       sources.set(key, cur);
     }
   }
-  compiled = { cjk, ascii, sources };
+  compiled = { cjk, ascii, sources, uncorroborated: new Set(UNCORROBORATED_SOURCE_CATEGORIES.map(normalizeText)) };
   return compiled;
 }
 
@@ -874,9 +922,12 @@ function isTrapped(text: string, pos: number, e: KeywordEntry): boolean {
 function asciiRightBoundaryOk(text: string, end: number, kwLen: number, glue: boolean): boolean {
   const next = text[end];
   if (!isLatinWordChar(next)) return true;
-  // plural / 3rd-person suffix
+  // plural / 3rd-person suffix: 's' always, 'es' only where English spells it (boxes, matches, dishes, heroes),
+  // so 'car' does not match 'cares' and 'game' does not match 'gamees'
   if (next === 's' && !isLatinWordChar(text[end + 1])) return true;
-  if (next === 'e' && text[end + 1] === 's' && !isLatinWordChar(text[end + 2])) return true;
+  if (next === 'e' && text[end + 1] === 's' && !isLatinWordChar(text[end + 2]) && /(?:s|x|z|ch|sh|o)$/.test(text.slice(end - kwLen, end))) {
+    return true;
+  }
   // glued compound ('#skincareroutine'): only in hashtags / tags, never in prose ('mechanical', 'protestant')
   return glue && kwLen >= ASCII_PREFIX_GLUE_MIN;
 }
@@ -946,9 +997,47 @@ export const STOP_TOPICS: ReadonlySet<string> = new Set(
       'live|ep|episode|part|shorts feed|' +
       '영상|쇼츠|숏츠|숏폼|유튜브|유튜버|유튜브쇼츠|구독|구독과좋아요|좋아요|댓글|추천|알고리즘|인기|인기급상승|인기동영상|급상승|떡상|' +
       '틱톡|릴스|동영상|자막|한글자막|영어자막|풀버전|최신|신규|공식|' +
-      '動画|おすすめ|オススメ|ショート|ショート動画|ユーチューブ|バズれ|バズりたい|拡散希望|字幕|切り抜き動画',
+      '動画|おすすめ|オススメ|ショート|ショート動画|ユーチューブ|バズれ|バズりたい|拡散希望|字幕|切り抜き動画|' +
+      // broadcaster boilerplate put on every upload (real data: '뉴스' 1,078 videos, 'ytn' 1,027, 'mbn-i' 120)
+      '뉴스|news|ytn|mbn|mbn-i|매일방송|프로그램|전국|top영상|ニュース',
   ),
 );
+
+/** True for generic tags that say nothing about the content (STOP_TOPICS), also for already extracted topics. */
+export function isGenericTopic(topic: string): boolean {
+  const t = normalizeText(topic);
+  return STOP_TOPICS.has(t) || STOP_TOPICS.has(t.replace(/ /g, ''));
+}
+
+/** Comparison key for self-topic checks: normalized, without '@', spaces and name punctuation. */
+function selfKey(s: string): string {
+  return normalizeText(s).replace(/^@/, '').replace(/[\s_\-.·・'’]/g, '');
+}
+
+/** The account's name, its '|' / '/' separated parts and its handle as self-topic keys (see isSelfTopic). */
+function selfKeys(account: { name?: string | null; handle?: string | null }): string[] {
+  const out: string[] = [];
+  const add = (x: string | null | undefined) => {
+    const k = x ? selfKey(x) : '';
+    if (k.length >= 2 && !out.includes(k)) out.push(k);
+  };
+  add(account.name);
+  for (const part of (account.name ?? '').split(/\s[|/]\s|[|｜]/)) add(part);
+  add(account.handle);
+  return out;
+}
+
+/**
+ * True when `topic` is the uploading channel's own name or handle used as a tag ('#노트펫' on 노트펫's videos,
+ * 'wolfen heiger' on Wolfen Heiger's): it labels the channel, not the content, and would turn every channel
+ * into its own "trend". Compared without spaces / punctuation ('ogn plus' = 'OGN PLUS').
+ */
+export function isSelfTopic(topic: string, account: { name?: string | null; handle?: string | null } | null | undefined): boolean {
+  if (!account) return false;
+  const t = selfKey(topic);
+  if (t.length < 2) return false;
+  return selfKeys(account).includes(t);
+}
 
 const BRACKET_RE = /[\[【〔〖]([^\[\]【】〔〕〖〗]{1,40})[\]】〕〗]/g;
 const EPISODE_RE = /^(?:ep|e|#|제|第|vol|part|pt)?\.?\s*\d+\s*(?:회|화|부|편|話|회차|ep|탄)?$/;
@@ -980,14 +1069,19 @@ export function extractBracketTopics(title: string): string[] {
 
 /**
  * Normalized topic keys for a video: bracketed series names and hashtags in the title, then tags, then
- * description hashtags. Generic stop-topics are removed; at most `MAX_TOPICS` (10).
+ * description hashtags. Generic stop-topics are removed, and so is the uploading channel's own name / handle
+ * when given (isSelfTopic); at most `MAX_TOPICS` (10).
  */
-export function extractTopics(input: { title: string; description: string | null; tags: string[] }, max = MAX_TOPICS): string[] {
+export function extractTopics(
+  input: { title: string; description: string | null; tags: string[]; accountName?: string | null; accountHandle?: string | null },
+  max = MAX_TOPICS,
+): string[] {
   const out: string[] = [];
+  const self = input.accountName || input.accountHandle ? { name: input.accountName ?? null, handle: input.accountHandle ?? null } : null;
   const push = (raw: string) => {
     if (out.length >= max) return;
     const t = cleanTopic(raw);
-    if (t && !out.includes(t)) out.push(t);
+    if (t && !out.includes(t) && !isSelfTopic(t, self)) out.push(t);
   };
   for (const t of extractBracketTopics(input.title)) push(t);
   for (const t of extractHashtags(input.title)) push(t);
@@ -1008,10 +1102,15 @@ export interface ClassifyInput {
   sourceCategory: string | null;
   accountSeedCategory: string | null;
   language: string | null;
+  /** Uploading account's display name / handle (optional): its own name used as a tag is not a topic. */
+  accountName?: string | null;
+  accountHandle?: string | null;
 }
 
 interface NodeAcc {
   source: number;
+  /** The source signal comes from an uploader-chosen category that needs keyword corroboration. */
+  sourceNeedsCorroboration: boolean;
   account: number;
   /** keyword label -> best field weight */
   rule: Map<string, number>;
@@ -1021,7 +1120,7 @@ interface NodeAcc {
 function accFor(map: Map<string, NodeAcc>, id: string): NodeAcc {
   let a = map.get(id);
   if (!a) {
-    a = { source: 0, account: 0, rule: new Map(), evidence: [] };
+    a = { source: 0, sourceNeedsCorroboration: false, account: 0, rule: new Map(), evidence: [] };
     map.set(id, a);
   }
   return a;
@@ -1068,10 +1167,12 @@ export function classifyVideo(input: ClassifyInput): { categories: CategoryAssig
     } else {
       const mapped = c.sources.get(key);
       if (mapped) {
+        const needsCorroboration = c.uncorroborated.has(key);
         for (const id of mapped.ids) {
           for (const a of ancestorsOf(id)) {
             const acc = accFor(accs, a);
             acc.source = Math.max(acc.source, mapped.confidence);
+            acc.sourceNeedsCorroboration = needsCorroboration;
             pushEvidence(acc, { field: 'sourceCategory', match: rawSource });
           }
         }
@@ -1115,6 +1216,10 @@ export function classifyVideo(input: ClassifyInput): { categories: CategoryAssig
     confidence: number;
     by: CategoryAssignment['by'];
     evidence: Evidence[];
+    /** Only a rule signal, and a weak one (keyword sum < WEAK_RULE_SUM). */
+    weakRuleOnly: boolean;
+    /** Has a source or account signal. */
+    anchored: boolean;
   }
   const scored = new Map<string, Scored>();
   for (const [id, a] of accs) {
@@ -1122,8 +1227,15 @@ export function classifyVideo(input: ClassifyInput): { categories: CategoryAssig
     let ruleSum = 0;
     for (const v of a.rule.values()) ruleSum += v;
     const rule = ruleSum >= MIN_RULE_SCORE - 1e-9 ? 1 - Math.exp(-ruleSum) : 0;
+    // An uploader-chosen source category counts fully only when a keyword of the same family (any field, any
+    // weight) agrees with it; the family's top-level node collects every keyword hit of its subcategories.
+    let source = a.source;
+    if (source > 0 && a.sourceNeedsCorroboration) {
+      const family = accs.get(topLevelOf(id) ?? id);
+      if (!family || family.rule.size === 0) source = Math.min(source, UNCORROBORATED_SOURCE_CONFIDENCE);
+    }
     const parts: [CategoryAssignment['by'], number][] = [
-      ['source', a.source],
+      ['source', source],
       ['rule', rule],
       ['account', a.account],
     ];
@@ -1138,13 +1250,17 @@ export function classifyVideo(input: ClassifyInput): { categories: CategoryAssig
     const evidence = a.evidence.filter((e) =>
       e.field === 'sourceCategory' || e.field === 'account' || e.field === 'manual' ? true : rule > 0,
     );
-    scored.set(id, { id, confidence: round2(combined), by, evidence });
+    const anchored = source > 0 || a.account > 0;
+    scored.set(id, { id, confidence: round2(combined), by, evidence, weakRuleOnly: !anchored && ruleSum < WEAK_RULE_SUM, anchored });
   }
 
-  // 5. Select families (max 3) and subcategories (max 3 each)
+  // 5. Select families (max 3) and subcategories (max 3 each). A secondary family resting on one ambiguous
+  // keyword is dropped when another family is backed by the source or the account.
   const rank = (a: Scored, b: Scored) =>
     b.confidence - a.confidence || b.evidence.length - a.evidence.length || TAXONOMY.indexOf(byId.get(a.id)!) - TAXONOMY.indexOf(byId.get(b.id)!);
-  const tops = [...scored.values()].filter((s) => byId.get(s.id)!.parent === null).sort(rank).slice(0, MAX_TOP_LEVEL);
+  const families = [...scored.values()].filter((s) => byId.get(s.id)!.parent === null).sort(rank);
+  const anyAnchored = families.some((f) => f.anchored);
+  const tops = families.filter((f, i) => i === 0 || !(f.weakRuleOnly && anyAnchored)).slice(0, MAX_TOP_LEVEL);
   const categories: CategoryAssignment[] = [];
   for (const t of tops) {
     categories.push({ id: t.id, confidence: t.confidence, evidence: t.evidence, by: t.by, version: CLASSIFIER_VERSION });

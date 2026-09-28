@@ -1,5 +1,6 @@
 import { createContext } from 'react';
 import type { Dataset, DatasetIndex } from '@vti/core';
+import type { LoadFailure } from './loadDataset.ts';
 
 export interface DatasetSourceInfo {
   url: string;
@@ -25,4 +26,22 @@ export interface DatasetContextValue {
   reload: () => void;
 }
 
+/** The loaded dataset; null while it loads or failed (pages render only below <RequireDataset>). */
 export const DatasetContext = createContext<DatasetContextValue | null>(null);
+
+/**
+ * App-level state that exists before the dataset is loaded, so the shell (sidebar, top bar, time-zone
+ * select) and routes that need no data (404) render immediately instead of waiting for the download.
+ */
+export interface AppStatusValue {
+  status: 'loading' | 'error' | 'ready';
+  failure: LoadFailure | null;
+  /** Display time zone (URL `tz` > stored preference > Asia/Seoul). */
+  tz: string;
+  setTz: (tz: string) => void;
+  reload: () => void;
+  /** Load the synthetic sample after a failure (explicit user choice, never silent). */
+  loadSample: () => void;
+}
+
+export const AppStatusContext = createContext<AppStatusValue | null>(null);

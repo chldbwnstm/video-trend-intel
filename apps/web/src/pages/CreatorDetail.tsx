@@ -8,9 +8,10 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { creatorTimeline, postingHeatmap, queryVideos } from '@vti/core';
-import type { Account, Platform, QueryResult, Video, VideoQuery, VideoRow } from '@vti/core';
+import type { Account, Platform, Portfolio, QueryResult, Video, VideoQuery, VideoRow } from '@vti/core';
 import {
   ArrowLeft,
+  ArrowRight,
   BarChart3,
   CalendarClock,
   Clock3,
@@ -19,6 +20,7 @@ import {
   FolderTree,
   GitCompareArrows,
   Handshake,
+  LineChart,
   TriangleAlert,
   Users,
 } from 'lucide-react';
@@ -69,7 +71,9 @@ import {
   timelineStatus,
   followersMetric,
   heatmapSlots,
+  portfolioVideosHref,
   slotLabel,
+  windowBeforeCollection,
 } from '../features/creators/logic.ts';
 import type { CreatorDetailData, HeatSlot, PlatformBreakdown } from '../features/creators/logic.ts';
 import {
@@ -80,8 +84,10 @@ import {
   PlatformStrip,
   PostingHeatmap,
   portfolioAvatar,
+  PreCollectionCallout,
 } from '../features/creators/parts.tsx';
 import type { HeatMode } from '../features/creators/parts.tsx';
+import { dataReadiness } from '../features/trends/readiness.ts';
 
 const DETAIL_PRESETS = ['rolling24h', 'rolling7d', 'rolling30d', 'today', 'yesterday', 'last7d', 'last30d', 'last90d', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'] as const;
 
@@ -145,7 +151,8 @@ function NotFound({ creatorKey }: { creatorKey: string }) {
 /* ------------------------------------------------------------------------------------------ page */
 
 function CreatorDetail({ creatorKey }: { creatorKey: string }) {
-  const { now, tz } = useDataset();
+  const { dataset, now, tz } = useDataset();
+  const readiness = useMemo(() => dataReadiness(dataset), [dataset]);
   const { spec, range, rollingHours, setSpec } = useRangeParam('range', 'rolling30d');
   const input = useMemo(() => ({ key: creatorKey, range, rollingHours, tz, now }), [creatorKey, range, rollingHours, tz, now]);
   const detail = useAnalysis('creators.detail', input, (index, i) => computeCreatorDetail(index, i));
@@ -173,6 +180,7 @@ function CreatorDetail({ creatorKey }: { creatorKey: string }) {
   const p = d.portfolio;
   const av = portfolioAvatar(p.accounts);
   const multi = d.summary.platforms.length > 1;
+  const beforeCollection = windowBeforeCollection(d.window, readiness.firstObservationAt, now);
 
   return (
     <div className="flex flex-col gap-4">
@@ -234,6 +242,17 @@ function CreatorDetail({ creatorKey }: { creatorKey: string }) {
         </p>
       ) : null}
 
+      {beforeCollection ? (
+        <PreCollectionCallout
+          readiness={readiness}
+          rangeLabel={`${formatLocalRange(range)}, ${tzShort(tz)}`}
+          onRecent={() => setSpec('rolling30d')}
+          recentLabel="최근 30일(롤링)로 보기"
+        >
+          기간 업로드·게시 시간·분야 구성·업로드 주기는 게시일 기준이라 그대로 볼 수 있음. 상위 영상은 업로드 기간 기준으로 보여 줌.
+        </PreCollectionCallout>
+      ) : null}
+
       <SectionBoundary title="핵심 지표를 계산하지 못함" resetKey={spec}>
         <Kpis d={d} stale={detail.isStale} />
       </SectionBoundary>
@@ -275,7 +294,7 @@ function CreatorDetail({ creatorKey }: { creatorKey: string }) {
 
       <Card flush>
         <SectionBoundary title="상위 영상을 계산하지 못함" resetKey={spec}>
-          <TopVideos accountIds={p.accountIds} range={range} rollingHours={rollingHours} multi={multi} />
+          <TopVideos portfolio={p} spec={spec} range={range} rollingHours={rollingHours} multi={multi} beforeCollection={beforeCollection} />
         </SectionBoundary>
       </Card>
 
@@ -288,7 +307,7 @@ function CreatorDetail({ creatorKey }: { creatorKey: string }) {
         <Card className="lg:col-span-4">
           <CardHeader icon={<FolderTree className="size-4" />} title="분야 구성" description="추적 중인 전체 영상의 상위 분야 (영상 수)." />
           <SectionBoundary title="분야 구성을 계산하지 못함" compact>
-            <CategoryMixCard d={d} />
+            <CategoryMixCard d={d} spec={spec} />
           </SectionBoundary>
         </Card>
       </SectionGrid>
@@ -301,7 +320,7 @@ function CreatorDetail({ creatorKey }: { creatorKey: string }) {
         </Card>
         <Card className="lg:col-span-6">
           <SectionBoundary title="협찬 영상을 표시하지 못함" compact>
-            <SponsoredCard d={d} />
+            <SponsoredCard d={d} spec={spec} />
           </SectionBoundary>
         </Card>
       </SectionGrid>
@@ -559,9 +578,30 @@ function TimelineCard({ creatorKey, range }: { creatorKey: string; range: { star
 
 type TopMode = 'activity' | 'upload';
 
-function TopVideos({ accountIds, range, rollingHours, multi }: { accountIds: string[]; range: { start: string; end: string }; rollingHours: number | null; multi: boolean }) {
+const TOP_SORT: Record<TopMode, 'views_period' | 'views_total'> = { activity: 'views_period', upload: 'views_total' };
+
+function TopVideos({
+  portfolio,
+  spec,
+  range,
+  rollingHours,
+  multi,
+  beforeCollection,
+}: {
+  portfolio: Portfolio;
+  spec: string;
+  range: { start: string; end: string };
+  rollingHours: number | null;
+  multi: boolean;
+  /** The window ends before the first observation: period increases are unknown, so default to upload mode. */
+  beforeCollection: boolean;
+}) {
   const { now, tz } = useDataset();
-  const [mode, setMode] = useState<TopMode>('activity');
+  const [chosen, setMode] = useState<TopMode | null>(null);
+  const mode: TopMode = chosen ?? (beforeCollection ? 'upload' : 'activity');
+  const accountIds = portfolio.accountIds;
+  // Same list in the video search (full list, filters, detail drawer with growth chart + raw observations).
+  const listParams = { range: spec, mode, sort: TOP_SORT[mode] };
   const query = useMemo(
     (): VideoQuery => ({
       dateMode: mode,
@@ -570,7 +610,7 @@ function TopVideos({ accountIds, range, rollingHours, multi }: { accountIds: str
       tz,
       now,
       accountIds,
-      sort: mode === 'activity' ? 'views_period' : 'views_total',
+      sort: TOP_SORT[mode],
       sortDir: 'desc',
       limit: 10,
     }),
@@ -589,25 +629,44 @@ function TopVideos({ accountIds, range, rollingHours, multi }: { accountIds: str
               : '업로드 기간 기준: 기간 안에 게시된 영상을 기준 시각 누적 조회로 비교.'
           }
           actions={
-            <SegmentedControl<TopMode>
-              size="sm"
-              label="상위 영상 날짜 기준"
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: 'activity', label: '조회 발생 기간' },
-                { value: 'upload', label: '업로드 기간' },
-              ]}
-            />
+            <span className="flex flex-wrap items-center gap-2">
+              <SegmentedControl<TopMode>
+                size="sm"
+                label="상위 영상 날짜 기준"
+                value={mode}
+                onChange={setMode}
+                options={[
+                  { value: 'activity', label: '조회 발생 기간' },
+                  { value: 'upload', label: '업로드 기간' },
+                ]}
+              />
+              <Link
+                to={portfolioVideosHref(portfolio, listParams)}
+                className="focus-ring inline-flex items-center gap-1 rounded-sm text-[13px] font-medium text-accent-text hover:underline"
+              >
+                영상 탐색에서 보기 <ArrowRight className="size-3.5" aria-hidden />
+              </Link>
+            </span>
           }
         />
       </div>
-      <TopVideoTable state={res} mode={mode} multi={multi} />
+      <TopVideoTable state={res} mode={mode} multi={multi} detailHref={(id) => portfolioVideosHref(portfolio, { ...listParams, v: id })} />
     </>
   );
 }
 
-function TopVideoTable({ state, mode, multi }: { state: { data: QueryResult | undefined; error: Error | null; isStale: boolean }; mode: TopMode; multi: boolean }) {
+function TopVideoTable({
+  state,
+  mode,
+  multi,
+  detailHref,
+}: {
+  state: { data: QueryResult | undefined; error: Error | null; isStale: boolean };
+  mode: TopMode;
+  multi: boolean;
+  /** In-app link to the video's detail drawer (growth chart + raw observations). */
+  detailHref: (videoId: string) => string;
+}) {
   const { tz, now } = useDataset();
   if (state.error) return <ErrorState title="상위 영상을 계산하지 못함" error={state.error} compact />;
   const r = state.data;
@@ -624,7 +683,9 @@ function TopVideoTable({ state, mode, multi }: { state: { data: QueryResult | un
           accountName={x.account?.name}
           publishedLabel={fmtTime(x.video.publishedAt, tz, 'date')}
           publishedTitle={`${fmtTime(x.video.publishedAt, tz)} ${tzShort(tz)}`}
-        />
+        >
+          <VideoDetailLink to={detailHref(x.video.id)} />
+        </VideoCell>
       ),
     },
     mode === 'activity'
@@ -703,6 +764,16 @@ function TopVideoTable({ state, mode, multi }: { state: { data: QueryResult | un
   );
 }
 
+/** Opens the video search detail drawer (growth chart + raw observations); the title itself opens the platform. */
+function VideoDetailLink({ to }: { to: string }) {
+  return (
+    <Link to={to} className="focus-ring mt-0.5 inline-flex w-fit items-center gap-1 rounded-sm text-xs text-accent-text hover:underline">
+      <LineChart className="size-3" aria-hidden />
+      성장 곡선·관측 기록
+    </Link>
+  );
+}
+
 function lastSrc(r: VideoRow): string | null {
   const o = r.video.obs;
   return o.length ? o[o.length - 1].src : null;
@@ -769,7 +840,7 @@ function HeatmapCard({ creatorKey, multi }: { creatorKey: string; multi: boolean
 
 /* ------------------------------------------------------------------------------------------ categories */
 
-function CategoryMixCard({ d }: { d: CreatorDetailData }) {
+function CategoryMixCard({ d, spec }: { d: CreatorDetailData; spec: string }) {
   const mix = d.categoryMix;
   if (!mix.videos) return <EmptyState compact title="추적 영상 없음" />;
   const top = mix.rows.slice(0, 8);
@@ -785,7 +856,8 @@ function CategoryMixCard({ d }: { d: CreatorDetailData }) {
             label: catLabel(r.id),
             value: r.count,
             display: formatInteger(r.count),
-            to: hrefWith('/videos', { cats: [r.id] }),
+            // This portfolio's videos in the category; activity mode keeps every publish date, like the counts here.
+            to: portfolioVideosHref(d.portfolio, { cats: [r.id], range: spec, mode: 'activity', sort: 'views_period' }),
           }))}
         />
       ) : null}
@@ -874,7 +946,7 @@ function CadenceCard({ d }: { d: CreatorDetailData }) {
 
 /* ------------------------------------------------------------------------------------------ sponsored */
 
-function SponsoredCard({ d }: { d: CreatorDetailData }) {
+function SponsoredCard({ d, spec }: { d: CreatorDetailData; spec: string }) {
   const { tz } = useDataset();
   const list = d.sponsored;
   const shown = list.slice(0, 12);
@@ -906,7 +978,12 @@ function SponsoredCard({ d }: { d: CreatorDetailData }) {
           ) : null}
           <ul className="flex flex-col divide-y divide-line">
             {shown.map((v) => (
-              <SponsoredRow key={v.id} v={v} tz={tz} />
+              <SponsoredRow
+                key={v.id}
+                v={v}
+                tz={tz}
+                detailHref={portfolioVideosHref(d.portfolio, { range: spec, mode: 'activity', sort: 'views_period', v: v.id })}
+              />
             ))}
           </ul>
           {list.length > shown.length ? <p className="text-xs text-fg-3">외 {formatInteger(list.length - shown.length)}개</p> : null}
@@ -916,7 +993,7 @@ function SponsoredCard({ d }: { d: CreatorDetailData }) {
   );
 }
 
-function SponsoredRow({ v, tz }: { v: Video; tz: string }) {
+function SponsoredRow({ v, tz, detailHref }: { v: Video; tz: string; detailHref: string }) {
   const s = v.sponsorship!;
   const evidence = s.evidence.map((e) => `${e.field === 'title' ? '제목' : e.field === 'description' ? '설명' : e.field === 'tags' ? '태그' : e.field}: “${e.match}”`);
   return (
@@ -940,6 +1017,7 @@ function SponsoredRow({ v, tz }: { v: Video; tz: string }) {
         <span className="tabular">게시 {fmtTime(v.publishedAt, tz, 'date')}</span>
         {s.brands.length ? <span>· 브랜드 {s.brands.join(', ')}</span> : null}
       </p>
+      <VideoDetailLink to={detailHref} />
     </li>
   );
 }

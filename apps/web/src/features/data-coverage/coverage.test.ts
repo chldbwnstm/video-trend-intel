@@ -19,6 +19,7 @@ import {
   formatHoursKo,
   observationDepth,
   rankableShare,
+  relativeToDataNow,
   runSummary,
   sortRuns,
   sourceRows,
@@ -133,6 +134,48 @@ describe('coverage model', () => {
     expect(s.medianIntervalHours).toBe(3);
     expect(sortRuns(runs)[0].id).toBe('c');
     expect(runSummary([run('x', 's', t)], t).medianIntervalHours).toBeNull();
+    // A run that started after the data now (it added nothing newer) is still a recent run.
+    const after = runSummary([...runs, run('e', 's2', t + 2 * 60_000, 'partial')], t);
+    expect(after.last24h).toBe(4);
+    expect(after.problems24h).toBe(2);
+  });
+
+  it('labels collection times after the data now instead of a future relative time', () => {
+    const t = Date.UTC(2026, 8, 28, 15, 26, 16); // data now = newest observation
+    expect(relativeToDataNow(t - 3 * 3_600_000, t)).toEqual({ text: '3시간 전', note: null, afterNow: false, hint: null });
+    const noObs = relativeToDataNow(t + 101_000, t, { observations: 0 });
+    expect(noObs).toMatchObject({ text: '기준 시각 이후 실행', note: '새 관측 없음', afterNow: true });
+    expect(noObs.hint).toContain('관측 0건');
+    // Without the run (or with observations), do not claim "no new observations".
+    expect(relativeToDataNow(t + 101_000, t)).toMatchObject({ text: '기준 시각 이후 실행', note: null });
+    expect(relativeToDataNow(t + 101_000, t, { observations: 12 })).toMatchObject({ text: '기준 시각 이후 실행', note: null });
+  });
+
+  it('attaches the run behind the last success to each source row', () => {
+    const t = Date.UTC(2026, 8, 28, 15, 26, 16);
+    const coverage = [
+      cov({ source: 'peertube', platform: 'peertube', lastRunAt: t + 101_000, lastSuccessAt: t + 101_000, lastStatus: 'ok' }),
+      cov({ source: 'youtube-rss', lastRunAt: t - 196_000, lastSuccessAt: t - 196_000, lastStatus: 'ok' }),
+    ];
+    const run = (id: string, source: string, startedAt: number, observations: number): CollectionRun => ({
+      id,
+      startedAt,
+      finishedAt: startedAt + 14_000,
+      source,
+      status: 'ok',
+      videosSeen: 5,
+      videosNew: 0,
+      observations,
+      requests: 3,
+      errors: [],
+    });
+    const rows = sourceRows(coverage, t, [run('p1', 'peertube', t - 600_000, 950), run('p2', 'peertube', t + 101_000, 0), run('y1', 'youtube-rss', t - 196_000, 3624)]);
+    const pt = rows.find((r) => r.source === 'peertube')!;
+    expect(pt.lastSuccessRun?.id).toBe('p2');
+    expect(pt.state).toBe('ok');
+    expect(relativeToDataNow(pt.lastSuccessAt!, t, pt.lastSuccessRun).note).toBe('새 관측 없음');
+    expect(rows.find((r) => r.source === 'youtube-rss')!.lastSuccessRun?.id).toBe('y1');
+    expect(sourceRows(coverage, t).every((r) => r.lastSuccessRun === null)).toBe(true);
   });
 
   it('formats durations and spans in Korean', () => {
@@ -161,6 +204,24 @@ describe('CoveragePage', () => {
     h(DatasetContext.Provider, { value }, h(MemoryRouter, { initialEntries: ['/coverage'] }, h(Routes, null, h(Route, { path: '/coverage', element: h(CoveragePage) })))),
   );
   const t = text(html);
+
+  it('never shows a last success as a future relative time', () => {
+    const t0 = dataset.generatedAt;
+    const shifted = {
+      ...dataset,
+      coverage: dataset.coverage.map((c, i) => (i === 0 && c.enabled ? { ...c, lastRunAt: t0 + 60_000, lastSuccessAt: t0 + 60_000, lastStatus: 'ok' as const } : c)),
+      runs: [...dataset.runs, { id: 'late', startedAt: t0 + 60_000, finishedAt: t0 + 90_000, source: dataset.coverage[0].source, status: 'ok' as const, videosSeen: 1, videosNew: 0, observations: 0, requests: 1, errors: [] }],
+    };
+    const v = { ...value, dataset: shifted, index: buildIndex(shifted) };
+    const out = text(
+      renderToStaticMarkup(h(DatasetContext.Provider, { value: v }, h(MemoryRouter, { initialEntries: ['/coverage'] }, h(Routes, null, h(Route, { path: '/coverage', element: h(CoveragePage) }))))),
+    );
+    if (dataset.coverage[0].enabled) {
+      expect(out).toContain('기준 시각 이후 실행 (새 관측 없음)'); // source table
+      expect(out).toContain('(기준 시각 이후 실행 · 새 관측 없음)'); // source card
+    }
+    expect(out).not.toMatch(/\d+분 후/);
+  });
 
   it('shows freshness, the per-source table and cards', () => {
     expect(t).toContain('데이터 범위');

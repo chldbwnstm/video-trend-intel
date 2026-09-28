@@ -256,6 +256,21 @@ export function rollingWindow(hours: number, now: number, tz: string): UtcWindow
 }
 
 /**
+ * True when both ends of `w` are local midnights in `w.tz`, i.e. `w` is a local date range (anything produced
+ * by resolveWindow). Rolling windows ([now - N h, now)) normally are not. False for unknown zones.
+ */
+export function isLocalDateWindow(w: UtcWindow): boolean {
+  try {
+    return (
+      localDateStartUtc(localDateOf(w.startMs, w.tz), w.tz) === w.startMs &&
+      localDateStartUtc(localDateOf(w.endMs, w.tz), w.tz) === w.endMs
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The window of equal length immediately preceding `w`.
  * When `w` is aligned to local midnights in `w.tz` (anything produced by resolveWindow), "equal length"
  * means the same number of local calendar days, so DST transitions do not shift the previous window

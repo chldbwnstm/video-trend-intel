@@ -24,11 +24,18 @@ import type {
 } from '@vti/core';
 import { cached, stableStringify } from '../../lib/cache.ts';
 import { orderPlatforms } from '../../lib/platform.ts';
+import { csvNumber, csvStatusLabel, DATE_MODE_CSV_LABELS, periodCsvFields, periodCsvHeader } from '../creators/csv.ts';
 
 export type SponsorLevelFilter = 'any' | 'disclosed' | 'likely';
 export const SPONSOR_LEVELS: SponsorLevelFilter[] = ['any', 'disclosed', 'likely'];
 export type BrandDateMode = Extract<DateMode, 'upload' | 'activity'>;
 export const BRAND_DATE_MODES: BrandDateMode[] = ['upload', 'activity'];
+
+/** What the summed view metric means in each date mode (UI labels and CSV headers use the same words). */
+export const BRAND_PERIOD_LABELS: Record<BrandDateMode, string> = {
+  upload: '게시 후 조회',
+  activity: '기간 조회 증가',
+};
 
 export const LEVEL_LABELS: Record<'disclosed' | 'likely', string> = {
   disclosed: '광고 표기',
@@ -475,8 +482,34 @@ export function uniqueEvidence(evidence: Evidence[]): Evidence[] {
 
 /* ------------------------------------------------------------------------------------------ csv rows */
 
+/**
+ * Brand leaderboard as CSV rows (for `toCsv`). The value column is named after the date mode (게시 후 조회 합계 /
+ * 기간 조회 증가 합계, as in the UI) and every row carries the period context (window start / end, zone,
+ * finished / running / rolling, date semantics, data as-of). `fmt` formats instants in the display zone.
+ */
 export function brandCsvRows(report: BrandReport, fmt: (ms: number) => string): (string | number | null)[][] {
-  const header = ['브랜드', '브랜드 목록 여부', '영상 수', '광고 표기', '협찬 추정', '크리에이터 수', '크리에이터', '플랫폼', '기간 조회 합계', '상태', '기준 시각', '최근 게시'];
+  const mode: BrandDateMode = report.query.dateMode === 'activity' ? 'activity' : 'upload';
+  const sumLabel = `${BRAND_PERIOD_LABELS[mode]} 합계`;
+  const w = report.result.window;
+  const tz = w?.tz ?? report.query.tz ?? 'UTC';
+  const period = w
+    ? periodCsvFields({ window: w, rollingHours: report.query.rollingHours ?? null, now: report.result.now, dateMode: DATE_MODE_CSV_LABELS[mode] })
+    : [];
+  const header = [
+    '브랜드',
+    '브랜드 목록 여부',
+    '영상 수',
+    '광고 표기',
+    '협찬 추정',
+    '크리에이터 수',
+    '크리에이터',
+    '플랫폼',
+    sumLabel,
+    `${sumLabel} 상태`,
+    `${sumLabel} 기준 시각(${tz})`,
+    `최근 게시(${tz})`,
+    ...(w ? periodCsvHeader(tz) : []),
+  ];
   const rows = report.brands.map((b) => [
     b.name,
     b.curated ? '목록 브랜드' : '자동 추출',
@@ -486,10 +519,11 @@ export function brandCsvRows(report: BrandReport, fmt: (ms: number) => string): 
     b.creators.length,
     b.creators.map((c) => c.name).join(' | '),
     b.platforms.join(' | '),
-    b.views.status === 'unavailable' ? null : b.views.value,
-    b.views.status,
+    b.views.status === 'unavailable' ? null : csvNumber(b.views.value),
+    csvStatusLabel(b.views),
     b.views.asOf !== null ? fmt(b.views.asOf) : null,
     Number.isFinite(b.latestPublishedAt) ? fmt(b.latestPublishedAt) : null,
+    ...period,
   ]);
   return [header, ...rows];
 }

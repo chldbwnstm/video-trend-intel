@@ -9,6 +9,7 @@ import {
   STOP_TOPICS,
   TAXONOMY,
   TOP_LEVEL_CATEGORY_IDS,
+  UNCORROBORATED_SOURCE_CONFIDENCE,
   ancestorsOf,
   categoryLabel,
   categoryPathLabel,
@@ -17,6 +18,8 @@ import {
   extractBracketTopics,
   extractTopics,
   findKeywords,
+  isGenericTopic,
+  isSelfTopic,
   taxonomyById,
   topLevelOf,
   type ClassifyInput,
@@ -51,7 +54,7 @@ const LATIN = /^[\x20-\x7e]+$/;
 
 describe('taxonomy structure', () => {
   it('has the classifier version', () => {
-    expect(CLASSIFIER_VERSION).toBe('rules-2026.09.1');
+    expect(CLASSIFIER_VERSION).toBe('rules-2026.09.2');
   });
 
   it('has exactly the 20 fixed top-level ids, in order', () => {
@@ -114,12 +117,14 @@ describe('taxonomy structure', () => {
     expect(kw('news_politics/election')).toContain('선거');
   });
 
-  it('maps every live Dailymotion channel except webcam', () => {
+  it('maps every live Dailymotion channel except webcam and creation', () => {
     // https://api.dailymotion.com/channels?fields=id,name (fetched 2026-09-28)
-    const channels = ['animals', 'auto', 'people', 'fun', 'creation', 'school', 'videogames', 'kids', 'lifestyle', 'shortfilms', 'music', 'news', 'sport', 'tech', 'travel', 'tv'];
+    const channels = ['animals', 'auto', 'people', 'fun', 'school', 'videogames', 'kids', 'lifestyle', 'shortfilms', 'music', 'news', 'sport', 'tech', 'travel', 'tv'];
     const mapped = new Set(TAXONOMY.flatMap((n) => n.sourceCategories));
     for (const c of channels) expect(mapped.has(`dailymotion:${c}`), c).toBe(true);
     expect(mapped.has('dailymotion:webcam')).toBe(false);
+    // 'creation' held toy ads, TV clips and spam on real data, rarely how-to
+    expect(mapped.has('dailymotion:creation')).toBe(false);
   });
 
   it('maps every PeerTube category', () => {
@@ -300,6 +305,36 @@ describe('classifyVideo: source and account signals', () => {
     expect(c.by).toBe('source');
     expect(c.confidence).toBe(SOURCE_CONFIDENCE);
     expect(c.evidence).toEqual([{ field: 'sourceCategory', match: 'dailymotion:news' }]);
+    // a news outlet's report filed under 'news' stays news even when one word points elsewhere
+    expect(classify({ title: '[김종석의 리포트]해군 실종날 골프 의혹에 “사실무근”', sourceCategory: 'dailymotion:news' }).categories[0].id).toBe('news_politics');
+  });
+
+  it("unreliable Dailymotion channels ('auto', 'tech', 'tv', ...) count fully only when a keyword of the family agrees", () => {
+    // uploader-chosen channel alone: below a single title keyword
+    const c = get({ title: '조폐공사 70주년 기념 설명회', sourceCategory: 'dailymotion:auto' }, 'autos')!;
+    expect(c.by).toBe('source');
+    expect(c.confidence).toBe(UNCORROBORATED_SOURCE_CONFIDENCE);
+    // a keyword of the same family (even a single description word) restores the full source confidence
+    const n = get({ title: '조폐공사 70주년 기념 설명회', description: '자동차 이야기', sourceCategory: 'dailymotion:auto' }, 'autos')!;
+    expect(n.confidence).toBe(SOURCE_CONFIDENCE);
+    // broad channels keep their lower broad confidence when corroborated
+    expect(get({ title: '예능 하이라이트', sourceCategory: 'dailymotion:tv' }, 'entertainment')!.confidence).toBeGreaterThanOrEqual(BROAD_SOURCE_CONFIDENCE);
+    expect(get({ title: 'Albanese to join Ukraine peacekeeping force', sourceCategory: 'dailymotion:tv' }, 'entertainment')!.confidence).toBe(UNCORROBORATED_SOURCE_CONFIDENCE);
+    // other platforms' categories are unchanged
+    expect(get({ title: 'x', sourceCategory: 'peertube:News & Politics' }, 'news_politics')!.confidence).toBe(SOURCE_CONFIDENCE);
+  });
+
+  it("news outlets' Dailymotion channel picks do not outrank what the title says", () => {
+    // MBN News files items under 'auto', ABC NEWS (Australia) under 'tv', CM 한국인 defence reports under 'tech'
+    const mbn = classify({ title: '[속보] 신일, 끝전 1천만 원 동방사회복지회에 전달', sourceCategory: 'dailymotion:auto' });
+    expect(mbn.categories[0].id).toBe('news_politics');
+    expect(get({ title: '[속보] 신일, 끝전 1천만 원 동방사회복지회에 전달', sourceCategory: 'dailymotion:auto' }, 'autos')!.confidence).toBe(UNCORROBORATED_SOURCE_CONFIDENCE);
+    const abc = classify({ title: 'Albanese to join Ukraine coalition of the willing', sourceCategory: 'dailymotion:tv' });
+    expect(abc.categories[0].id).toBe('news_politics');
+    const cm = classify({ title: '러시아, 일본해에서 순항미사일 합동 타격 훈련 실시', sourceCategory: 'dailymotion:tech' });
+    expect(cm.categories[0].id).toBe('news_politics');
+    // a car review filed under 'auto' keeps the full source confidence
+    expect(get({ title: '신형 그랜저 시승기', sourceCategory: 'dailymotion:auto' }, 'autos')!.confidence).toBeGreaterThanOrEqual(SOURCE_CONFIDENCE);
   });
 
   it('maps PeerTube categories case-insensitively', () => {
@@ -354,8 +389,28 @@ describe('classifyVideo: source and account signals', () => {
     expect(both.confidence).toBeGreaterThan(rule);
     expect(both.confidence).toBeGreaterThan(ACCOUNT_CONFIDENCE);
     expect(both.confidence).toBeCloseTo(1 - (1 - rule) * (1 - ACCOUNT_CONFIDENCE), 1);
-    expect(both.by).toBe('rule');
+    // one title keyword (0.63) is weaker than the channel seed (0.7)
+    expect(both.by).toBe('account');
     expect(both.evidence).toEqual(expect.arrayContaining([{ field: 'account', match: 'beauty' }, { field: 'title', match: '스킨케어' }]));
+    // two title keywords (0.86) are stronger
+    expect(get({ title: '스킨케어 세럼 루틴', accountSeedCategory: 'beauty' }, 'beauty')!.by).toBe('rule');
+  });
+
+  it('a single ambiguous title word does not outrank the channel seed, and is dropped as a secondary family', () => {
+    expect(ACCOUNT_CONFIDENCE).toBeGreaterThan(1 - Math.exp(-1));
+    // NFL recaps on a sports channel: 'game' is a trap here, sports stays first and no gaming label
+    const nfl = classify({ title: "Bears vs. Packers | NFL Game Highlights | 403-yard game", sourceCategory: 'youtube:seed:sports' });
+    expect(nfl.categories[0].id).toBe('sports');
+    expect(nfl.categories.map((c) => c.id)).not.toContain('gaming');
+    // a comedy sketch mentioning a ring: fashion (one title word) is not kept next to the channel's comedy
+    const sketch = classify({ title: '프러포즈 반지를 잃어버렸다', accountSeedCategory: 'comedy' });
+    expect(sketch.categories.map((c) => c.id)).toEqual(['comedy']);
+    // '라떼는 말이야' on a talk channel is not food
+    expect(tops({ title: '라떼는 말이야 (feat. 부장님)', accountSeedCategory: 'entertainment' })).not.toContain('food');
+    // ... but a strong secondary signal (two words, or title + tag) is kept
+    expect(tops({ title: '프러포즈 반지 목걸이 고르기', accountSeedCategory: 'comedy' })).toContain('fashion');
+    // without any source / account signal, a weak rule family is still a label
+    expect(tops({ title: '프러포즈 반지를 잃어버렸다' })).toEqual(['fashion']);
   });
 
   it('caps confidence at 0.99', () => {
@@ -461,6 +516,23 @@ describe('classifyVideo: ASCII keywords match on word boundaries', () => {
     expect(ids({ title: 'gameboy' })).not.toContain('gaming');
   });
 
+  it("'es' plurals only where English spells them ('cares' is not 'car'; 'xboxes' is 'xbox')", () => {
+    expect(findKeywords('Alpha Male "No One Cares"').map((k) => k.keyword)).not.toContain('car');
+    expect(tops({ title: 'Alpha Male "No One Cares"' })).not.toContain('autos');
+    expect(findKeywords('best cars of 2026').map((k) => k.keyword)).toContain('cars');
+    expect(findKeywords('two new xboxes').map((k) => k.keyword)).toContain('xbox');
+    expect(findKeywords('smartwatches compared').map((k) => k.keyword)).toContain('smartwatch');
+  });
+
+  it('respects sports and car-review traps', () => {
+    expect(tops({ title: 'Chiefs vs. Bills Game Highlights | NFL 2026 Season' })).not.toContain('gaming');
+    expect(tops({ title: 'Mahomes 403-yard game' })).not.toContain('gaming');
+    expect(ids({ title: 'Ferrari V12 Interior Exterior walkaround' })).not.toContain('lifestyle/interior');
+    expect(ids({ title: 'Interior design ideas for small spaces' })).toContain('lifestyle/interior');
+    expect(tops({ title: 'Best game of the year contenders' })).toContain('gaming');
+    expect(tops({ title: 'Calls for Vic. Premier to front inquiry into Comm Games cancellation' })).not.toContain('gaming');
+  });
+
   it('respects English traps', () => {
     expect(ids({ title: 'Squid Game season 3 ending explained' })).not.toContain('gaming');
     expect(ids({ title: 'Olympic Games Paris highlights' })).not.toContain('gaming');
@@ -510,6 +582,14 @@ describe('classifyVideo: Korean/Japanese false-positive traps', () => {
     ['동물의 숲 섬 꾸미기', 'pets_animals'],
     ['운동화 세탁하는 법', 'health_fitness'],
     ['영어 자막 있는 드라마', 'education'],
+    // reviewed false positives on real data
+    ['안성훈의 치명상 멘트', 'health_fitness'],
+    ['サムネイル作成のコツ', 'beauty'],
+    ['연애전쟁 시즌2 1화', 'news_politics'],
+    ['여자전쟁 비하인드', 'news_politics'],
+    ['체중 관리와 전쟁 중', 'news_politics'],
+    ['톱스타뉴스 단독 인터뷰', 'news_politics'],
+    ['고양이 병원 가는 날', 'health_fitness'],
   ];
   for (const [title, notFamily] of cases) {
     it(`${title} -> not ${notFamily}`, () => {
@@ -572,6 +652,27 @@ describe('topics', () => {
   it('classifyVideo returns the same topics', () => {
     const inp = { title: '[지금이뉴스] #속보', description: '#정치', tags: ['국회'] };
     expect(classify(inp).topics).toEqual(extractTopics(inp));
+  });
+
+  it('drops broadcaster boilerplate tags', () => {
+    for (const s of ['뉴스', 'news', 'ytn', 'mbn', 'mbn-i', '매일방송', '프로그램', '전국', 'top영상']) expect(isGenericTopic(s), s).toBe(true);
+    expect(extractTopics({ title: '[지금이뉴스] 태풍 북상', description: null, tags: ['YTN', '뉴스', 'MBN-i', '매일방송', '태풍'] })).toEqual(['지금이뉴스', '태풍']);
+    expect(isGenericTopic('태풍')).toBe(false);
+  });
+
+  it("drops the uploading channel's own name / handle used as a tag", () => {
+    const inp = { title: '#노트펫 강아지 산책', description: '#notepet #반려견', tags: ['노트펫', 'Note Pet', '강아지'] };
+    expect(extractTopics({ ...inp, accountName: '노트펫', accountHandle: '@notepet' })).toEqual(['강아지', '반려견']);
+    // without the account the tags stay (older callers)
+    expect(extractTopics(inp)).toContain('노트펫');
+    expect(classify({ ...inp, accountName: '노트펫', accountHandle: 'notepet' }).topics).not.toContain('노트펫');
+    expect(isSelfTopic('ogn plus', { name: 'OGN PLUS', handle: 'ognplusclips' })).toBe(true);
+    expect(isSelfTopic('motorgraph', { name: '모터그래프 | Motorgraph', handle: null })).toBe(true);
+    expect(isSelfTopic('모터그래프', { name: '모터그래프 | Motorgraph', handle: null })).toBe(true);
+    expect(isSelfTopic('ytnnews24', { name: 'YTN news', handle: '@ytnnews24' })).toBe(true);
+    expect(isSelfTopic('자동차', { name: '모터그래프 | Motorgraph', handle: 'motorgraph' })).toBe(false);
+    expect(isSelfTopic('a', { name: 'A', handle: null })).toBe(false);
+    expect(isSelfTopic('노트펫', null)).toBe(false);
   });
 });
 

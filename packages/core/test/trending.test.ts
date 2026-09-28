@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { computeTrending } from '../src/trending.ts';
 import type { TrendingOptions } from '../src/trending.ts';
-import { previousWindow, resolveWindow } from '../src/time.ts';
+import { localDateStartUtc, previousWindow, resolveWindow } from '../src/time.ts';
 import type { ObservationPoint, Platform, TrendItem, Video } from '../src/types.ts';
 import { DAY_MS, HOUR_MS, makeAccount, makeIndex, makeObs, makeSourceWindow, makeVideo, ts } from './fixtures.ts';
 
@@ -17,7 +17,10 @@ const NOW = w.endMs + H;
 const cat = (id: string) => ({ id, confidence: 0.9, evidence: [], by: 'rule' as const, version: 'test' });
 
 let seq = 0;
-/** A video observed exactly at the previous-window start, the window start and the window end. */
+/**
+ * A video observed exactly at the previous-window start, the window start and the window end. Videos rotate
+ * over three channels unless an account is given (a topic needs two channels to be a trend).
+ */
 function vid(
   prevInc: number,
   curInc: number,
@@ -25,8 +28,10 @@ function vid(
   base = 1_000,
 ): Video {
   const platform = extra.platform ?? 'youtube';
+  const n = ++seq;
   return makeVideo({
-    id: `${platform}:t${++seq}`,
+    id: `${platform}:t${n}`,
+    accountId: `${platform}:ch${n % 3}`,
     publishedAt: ts('2026-08-01'),
     obs: [makeObs(prev.startMs, base), makeObs(w.startMs, base + prevInc), makeObs(w.endMs, base + prevInc + curInc)],
     ...extra,
@@ -47,7 +52,7 @@ describe('growth math and lists', () => {
   const videos = [
     ...topicVideos('alpha', 100, 300), // 900 vs 300 -> +200%
     ...topicVideos('beta', 1000, 500), // 1500 vs 3000 -> -50%
-    ...topicVideos('gamma', 10, 1000), // 3000 vs 30 -> +9900%
+    ...topicVideos('gamma', 40, 1000), // 3000 vs 120 -> +2400%
     ...topicVideos('delta', 200, 200), // 600 vs 600 -> 0
     ...topicVideos('tiny', 1, 5), // 15 vs 3 -> +400% but tiny volume
   ];
@@ -59,7 +64,7 @@ describe('growth math and lists', () => {
     expect(alpha).toMatchObject({ kind: 'topic', key: 'alpha', label: 'alpha', platform: 'youtube', current: 900, previous: 300, videoCount: 3, incompleteCount: 0 });
     expect(alpha.growth).toBeCloseTo(2, 12);
     expect(byKey(r.top, 'beta').growth).toBeCloseTo(-0.5, 12);
-    expect(byKey(r.top, 'gamma').growth).toBeCloseTo(99, 12);
+    expect(byKey(r.top, 'gamma').growth).toBeCloseTo(24, 12);
     expect(byKey(r.top, 'delta').growth).toBe(0);
     expect(r.window).toEqual(w);
     expect(r.previousWindow).toMatchObject({ startMs: prev.startMs, endMs: w.startMs });
@@ -71,7 +76,10 @@ describe('growth math and lists', () => {
     expect(keys(r.falling)).toEqual(['beta']);
     expect(keys(r.top)).toEqual(['gamma', 'beta', 'alpha', 'delta', 'tiny']);
     expect(r.notes.some((n) => n.includes('이번 기간 증가량 600 이상'))).toBe(true);
-    const explicit = computeTrending(index, opts({ minCurrent: 10 }));
+    // an explicit volume threshold alone does not admit 'tiny': its baseline (3) is below the default baseline
+    // threshold (max(100, lower quartile of previous: 3, 120, 300, 600, 3000 -> 120))
+    expect(keys(computeTrending(index, opts({ minCurrent: 10 })).rising)).toEqual(['gamma', 'alpha']);
+    const explicit = computeTrending(index, opts({ minCurrent: 10, minPrevious: 1 }));
     expect(keys(explicit.rising)).toEqual(['gamma', 'tiny', 'alpha']);
     expect(keys(computeTrending(index, opts({ minCurrent: 1000 })).rising)).toEqual(['gamma']);
   });
@@ -113,7 +121,7 @@ describe('growth math and lists', () => {
 describe('coverage honesty', () => {
   it('new uploads count 0 in the previous window; an entity with no previous increase has no growth (top only)', () => {
     const fresh = [0, 1, 2].map((i) =>
-      makeVideo({ id: `youtube:f${i}`, topics: ['fresh'], publishedAt: w.startMs + D, obs: [makeObs(w.startMs + D + H, 5), makeObs(w.endMs, 500 + i)] }),
+      makeVideo({ id: `youtube:f${i}`, accountId: `youtube:fch${i}`, topics: ['fresh'], publishedAt: w.startMs + D, obs: [makeObs(w.startMs + D + H, 5), makeObs(w.endMs, 500 + i)] }),
     );
     const index = makeIndex({ videos: [...fresh, ...topicVideos('alpha', 100, 300)], generatedAt: NOW });
     const r = computeTrending(index, opts());
@@ -169,6 +177,74 @@ describe('coverage honesty', () => {
   });
 });
 
+describe('growth baselines (rising / falling)', () => {
+  it('ranks growth only over a real previous baseline: large enough and spread over several videos', () => {
+    // 'tiny': previous total 1 (the publish ramp of videos uploaded minutes before the previous window ended),
+    // current 10,000 each -> +2,999,900% if taken at face value
+    const tinyBase = [0, 1, 2].map((i) =>
+      vid(0, 10_000, { id: `youtube:tb${i}`, topics: ['tiny'], obs: [makeObs(w.startMs - 60_000, i === 0 ? 1 : 0), makeObs(w.endMs, 10_000 + (i === 0 ? 1 : 0))], publishedAt: w.startMs - 2 * 60_000 }),
+    );
+    // 'big': 100k -> 200k per video in the previous week, then +300k -> +200%
+    const big = topicVideos('big', 100_000, 300_000);
+    // 'solo-base': a large previous value, but carried by one video; the others are new uploads
+    const soloBase = [
+      vid(90_000, 100_000, { topics: ['solo-base'] }),
+      ...[0, 1].map((i) => makeVideo({ id: `youtube:sb${i}`, accountId: `youtube:sbch${i}`, topics: ['solo-base'], publishedAt: w.startMs + D, obs: [makeObs(w.startMs + D + H, 10), makeObs(w.endMs, 900_000)] })),
+    ];
+    const index = makeIndex({ videos: [...tinyBase, ...big, ...soloBase], generatedAt: NOW });
+    const r = computeTrending(index, opts({ minPrevious: 50 }));
+    expect(byKey(r.top, 'tiny')).toMatchObject({ previous: 1, current: 30_000 });
+    expect(keys(r.rising)).toEqual(['big']);
+    expect(byKey(r.top, 'solo-base').growth).toBeGreaterThan(19);
+    expect(r.notes.some((n) => n.includes('직전 기간 기준값이 작거나 몇 개 영상에만 기댄 항목 2개'))).toBe(true);
+    // default baseline threshold (lower quartile of positive previous sums) also rejects 'tiny'
+    expect(keys(computeTrending(index, opts()).rising)).not.toContain('tiny');
+  });
+
+  it('the default baseline is at least 100 views even when every entity is small', () => {
+    const small = topicVideos('small', 20, 200); // 60 -> 600
+    const index = makeIndex({ videos: small, generatedAt: NOW });
+    expect(computeTrending(index, opts()).rising).toEqual([]);
+    expect(keys(computeTrending(index, opts({ minPrevious: 50 })).rising)).toEqual(['small']);
+  });
+
+  it('falling needs the same baseline', () => {
+    const shrinking = topicVideos('shrink', 1_000, 10);
+    const oneCarrier = [vid(5_000, 0, { topics: ['carried'] }), ...[0, 1].map(() => vid(0, 0, { topics: ['carried'] }))];
+    const index = makeIndex({ videos: [...shrinking, ...oneCarrier], generatedAt: NOW });
+    const r = computeTrending(index, opts({ minPrevious: 1 }));
+    expect(keys(r.falling)).toEqual(['shrink']);
+  });
+});
+
+describe('topic entities', () => {
+  it('a topic used by a single channel is not a trend (default minAccounts 2 for topics)', () => {
+    const own = [0, 1, 2].map(() => vid(100, 300, { topics: ['my-series'], accountId: 'youtube:one' }));
+    const shared = topicVideos('shared', 100, 300);
+    const index = makeIndex({ videos: [...own, ...shared], generatedAt: NOW });
+    const r = computeTrending(index, opts());
+    expect(keys(r.top)).toEqual(['shared']);
+    expect(r.notes.some((n) => n.includes('한 채널에서만 쓰인 주제 1개'))).toBe(true);
+    expect(keys(computeTrending(index, opts({ minAccounts: 1 })).top).sort()).toEqual(['my-series', 'shared']);
+    // creators / accounts / categories are not restricted
+    expect(computeTrending(index, opts({ kind: 'account', minVideos: 3 })).top.map((i) => i.key)).toContain('youtube:one');
+  });
+
+  it("generic tags and a channel's own name used as a tag are not topics", () => {
+    const channels = [
+      { id: 'youtube:ytn', name: 'YTN news', handle: '@ytnnews24', tags: ['ytn news', 'ytnnews24', 'ytn'] },
+      { id: 'youtube:pet', name: '노트펫', handle: '@notepet', tags: ['노트펫', 'notepet'] },
+      { id: 'youtube:ogn', name: 'OGN PLUS', handle: null, tags: ['ogn plus', 'ognplus'] },
+    ];
+    const accounts = channels.map((c) => makeAccount({ id: c.id, name: c.name, handle: c.handle }));
+    const videos = channels.flatMap((c) => [0, 1, 2].map(() => vid(100, 300, { accountId: c.id, topics: ['뉴스', ...c.tags, '태풍'] })));
+    const index = makeIndex({ videos, accounts, generatedAt: NOW });
+    // even with one channel allowed per topic, only the content topic remains
+    const r = computeTrending(index, opts({ minAccounts: 1 }));
+    expect(keys(r.top)).toEqual(['태풍']);
+  });
+});
+
 /* ------------------------------------------------------------------------------------------ */
 
 describe('windows', () => {
@@ -178,6 +254,7 @@ describe('windows', () => {
     const mk = (i: number): Video =>
       makeVideo({
         id: `youtube:r${i}`,
+        accountId: `youtube:rch${i}`,
         topics: ['run'],
         publishedAt: ts('2026-08-01'),
         obs: [
@@ -195,6 +272,20 @@ describe('windows', () => {
     expect(item).toMatchObject({ current: 900, previous: 300 });
     expect(item.growth).toBeCloseTo(2, 12);
     expect(r.notes.some((n) => n.includes('같은 경과 시간(약 84시간)'))).toBe(true);
+  });
+
+  it('rolling windows are labelled with date-times, and a short elapsed span in minutes', () => {
+    const at = localDateStartUtc('2026-09-29', SEOUL) + 26 * 60_000; // 2026-09-29 00:26 KST
+    const vs = [0, 1, 2].map((i) =>
+      makeVideo({ id: `youtube:w${i}`, accountId: `youtube:wch${i}`, topics: ['x'], publishedAt: ts('2026-08-01'), obs: [makeObs(at - 72 * H, 100), makeObs(at - 48 * H, 200), makeObs(at - 24 * H, 400), makeObs(at, 900)] }),
+    );
+    const index = makeIndex({ videos: vs, generatedAt: at });
+    const rolling = computeTrending(index, opts({ now: at, rollingHours: 24 }));
+    expect(rolling.notes[0]).toContain('2026-09-28 00:26 ~ 2026-09-29 00:26 (Asia/Seoul)');
+    expect(rolling.notes[0]).not.toContain('2026-09-28~2026-09-29');
+    const today = computeTrending(index, opts({ now: at, range: { start: '2026-09-29', end: '2026-09-29' } }));
+    expect(today.notes.join('\n')).toContain('같은 경과 시간(약 26분)');
+    expect(today.notes.join('\n')).not.toContain('약 0시간');
   });
 
   it('a window that has not started yet returns empty lists with an explanation', () => {
@@ -289,7 +380,7 @@ describe('scale', () => {
       const pub = NOW - (1 + (i % 90)) * D;
       const obs: ObservationPoint[] = [];
       for (let k = 0; k < 40; k++) obs.push(makeObs(pub + ((NOW - pub) * (k + 1)) / 41, (i % 500) * (k + 1)));
-      videos.push(makeVideo({ id: `youtube:s${i}`, accountId: `youtube:a${i % 300}`, publishedAt: pub, obs, topics: [`t${i % 200}`] }));
+      videos.push(makeVideo({ id: `youtube:s${i}`, accountId: `youtube:a${i % 301}`, publishedAt: pub, obs, topics: [`t${i % 200}`] }));
     }
     const index = makeIndex({ videos, generatedAt: NOW });
     const t0 = performance.now();

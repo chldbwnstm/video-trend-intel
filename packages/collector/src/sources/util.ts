@@ -54,6 +54,53 @@ export function detectLanguage(...texts: (string | null | undefined)[]): 'ko' | 
   return null;
 }
 
+// CJK unified ideographs (+ extension A, compatibility ideographs).
+const HAN_RE = /[㐀-䶿一-鿿豈-﫿]/;
+const LETTER_RE = /\p{L}/gu;
+
+/** Minimum letters (of another script) for a text to prove it is written in another language. */
+export const LANGUAGE_CONFLICT_MIN_LETTERS = 8;
+
+/**
+ * True when a declared/assumed language cannot be right for the text: `ko` without any Hangul, or `ja` without
+ * any Kana or Han, while the texts contain at least 8 letters (so they are written in some other script: Latin,
+ * Cyrillic, Chinese...). Used for PeerTube's uploader-declared language (SepiaSearch reports `ko` for French or
+ * Italian videos) and the YouTube seed-language fallback. Other languages, or texts with too few letters to judge
+ * (`IMG_5715`, emoji, numbers), never conflict.
+ */
+export function declaredLanguageConflicts(language: string | null | undefined, ...texts: (string | null | undefined)[]): boolean {
+  if (language !== 'ko' && language !== 'ja') return false;
+  const text = texts.filter((t): t is string => typeof t === 'string' && t.length > 0).join('\n');
+  if (!text) return false;
+  if (language === 'ko' && countMatches(text, HANGUL_RE) > 0) return false;
+  if (language === 'ja' && (countMatches(text, KANA_RE) > 0 || HAN_RE.test(text))) return false;
+  return countMatches(text, LETTER_RE) >= LANGUAGE_CONFLICT_MIN_LETTERS;
+}
+
+/* ------------------------------------------------------------------ URLs */
+
+/**
+ * The URL when it is an absolute http(s) URL with a host (credentials stripped), else null. Source data is
+ * untrusted: a `javascript:` / `data:` value must never reach the dataset, the static API or CSV exports.
+ */
+export function safeHttpUrl(v: unknown): string | null {
+  const s = str(v);
+  if (!s || s.length > 2048) return null;
+  let u: URL;
+  try {
+    u = new URL(s);
+  } catch {
+    return null;
+  }
+  if ((u.protocol !== 'https:' && u.protocol !== 'http:') || !u.hostname) return null;
+  if (u.username || u.password) {
+    u.username = '';
+    u.password = '';
+    return u.toString();
+  }
+  return s;
+}
+
 /* ------------------------------------------------------------------ text */
 
 const NAMED_ENTITIES: Record<string, string> = {

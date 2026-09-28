@@ -81,6 +81,17 @@ export const STATUS_META: Record<MetricStatus, StatusMeta> = {
   },
 };
 
+/**
+ * Marker + label for status counts and legends (`≈ 보간값`, `≥ 하한값`, `원천 제공값`, `— 계산 불가`).
+ * The marker is left out when the label already starts with it, so source-reported values never read
+ * `원천 원천 제공값`. Use this instead of concatenating `marker` and `label` yourself.
+ */
+export function statusCountLabel(status: MetricStatus): string {
+  const meta = STATUS_META[status] ?? STATUS_META.unavailable;
+  if (!meta.marker || meta.label.startsWith(meta.marker)) return meta.label;
+  return `${meta.marker} ${meta.label}`;
+}
+
 export const STATUS_ORDER: MetricStatus[] = [
   'exact',
   'interpolated',

@@ -6,6 +6,7 @@ import { EmptyState } from '../components/states.tsx';
 export default function NotFoundPage() {
   return (
     <Card className="mx-auto max-w-xl">
+      <h1 className="sr-only">페이지를 찾을 수 없음</h1>
       <EmptyState
         icon={<Compass className="size-8" />}
         title="페이지를 찾을 수 없음"

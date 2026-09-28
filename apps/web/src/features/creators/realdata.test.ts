@@ -11,14 +11,16 @@ import { createElement as h } from 'react';
 import type { ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { buildIndex, creatorTimeline, decodeDataset, postingHeatmap, presetRange, queryVideos, summarizeCreators } from '@vti/core';
+import { buildIndex, creatorTimeline, decodeDataset, postingHeatmap, presetRange, queryVideos, resolveAnalysisWindow, summarizeCreators } from '@vti/core';
 import type { CompactDataset, DatasetIndex } from '@vti/core';
 import { DatasetContext } from '../../data/context.ts';
 import type { DatasetContextValue } from '../../data/context.ts';
 import CreatorsPage from '../../pages/Creators.tsx';
 import CreatorDetailPage from '../../pages/CreatorDetail.tsx';
 import ComparePage from '../../pages/Compare.tsx';
-import { computeComparison, computeCreatorDetail, portfolioOptions } from './logic.ts';
+import { dataReadiness } from '../trends/readiness.ts';
+import { computeComparison, computeCreatorDetail, metricLeaders, portfolioOptions, windowBeforeCollection } from './logic.ts';
+import type { CompareEntry } from './logic.ts';
 
 const file = fileURLToPath(new URL('../../../public/data/dataset.json', import.meta.url));
 const present = existsSync(file);
@@ -72,6 +74,40 @@ describe.skipIf(!present)('creator pages on the real dataset', () => {
     const keys = opts.filter((o) => o.kind === 'creator').slice(0, 4).map((o) => o.key);
     const cmp = computeComparison(index, { keys, range: presetRange('rolling30d', tz, now), rollingHours: 720, tz, now, platforms: [] });
     expect(cmp.entries.every((e) => e.found)).toBe(keys.length > 0);
+  });
+
+  it('does not present a leaderboard of zeros for a window before the first observation', () => {
+    load();
+    const now = index.dataset.generatedAt;
+    const first = dataReadiness(index.dataset).firstObservationAt;
+    const w = resolveAnalysisWindow(presetRange('lastMonth', tz, now), tz, now, null);
+    const t = text(render('/creators?range=lastMonth', '/creators', CreatorsPage));
+    if (windowBeforeCollection(w, first, now)) {
+      expect(t).toContain('선택한 기간은 첫 관측 이전임');
+      expect(t).toContain('크리에이터 목록 (기간 업로드 순)');
+    } else {
+      expect(t).not.toContain('선택한 기간은 첫 관측 이전임');
+    }
+  });
+
+  it('never crowns every compared creator on a tie', () => {
+    load();
+    const now = index.dataset.generatedAt;
+    // The first four options, and the set a reviewer saw all marked '최고 0%' (Dailymotion likes are all 0).
+    const sets = [portfolioOptions(index, now).slice(0, 4).map((o) => o.key), ['channel-a', 'mbn', 'ytn', 'dailymotion:x2eco0h']];
+    for (const keys of sets) {
+      const cmp = computeComparison(index, { keys, range: presetRange('rolling30d', tz, now), rollingHours: 720, tz, now, platforms: [] });
+      const found = cmp.entries.filter((e) => e.found && e.summary);
+      for (const pick of [(e: CompareEntry) => e.summary!.engagementRate, (e: CompareEntry) => e.summary!.viewsInWindow]) {
+        const l = metricLeaders(found.map(pick));
+        if (found.length >= 2) expect(l.indices.length, keys.join(',')).toBeLessThan(found.length);
+      }
+      for (const p of cmp.platforms) {
+        const rows = found.map((e) => e.perPlatform.find((x) => x.platform === p)).filter((x) => x !== undefined);
+        if (rows.length < 2) continue;
+        expect(metricLeaders(rows.map((r) => r.summary.engagementRate)).indices.length, `${keys.join(',')} ${p}`).toBeLessThan(rows.length);
+      }
+    }
   });
 
   it('renders the list, a creator, an account and the comparison without failed sections', () => {

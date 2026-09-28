@@ -11,12 +11,15 @@ import {
   brandCounts,
   categoryMix,
   combinedTimeline,
+  compareColor,
   compareHref,
+  comparePalette,
   compareSeries,
   computeComparison,
   computeCreatorDetail,
   countLeaders,
   creatorHref,
+  effectiveCreatorSort,
   findPortfolio,
   followersExtra,
   followersMetric,
@@ -30,6 +33,7 @@ import {
   platformTimelineSeries,
   platformsWithoutFollowers,
   portfolioOptions,
+  portfolioVideosHref,
   searchPortfolioOptions,
   slotLabel,
   sponsoredVideos,
@@ -37,6 +41,7 @@ import {
   timelineStatus,
   toggleCompareKey,
   uploadCadence,
+  windowBeforeCollection,
 } from './logic.ts';
 
 const mv = (value: number | null, status: MetricValue['status'] = 'exact'): MetricValue => ({ value, status, asOf: null, note: null });
@@ -57,6 +62,41 @@ describe('compare keys and links', () => {
     expect(creatorHref('peertube:user@host.tld', { range: 'rolling7d' })).toBe('/creators/peertube:user@host.tld?range=rolling7d');
     expect(creatorHref('a/b c')).toBe('/creators/a%2Fb%20c');
     expect(compareHref(['a', 'b'], { range: 'rolling30d' })).toBe('/compare?keys=a,b&range=rolling30d');
+  });
+
+  it('links a portfolio to its videos in the video search (creator id or account ids)', () => {
+    const creator = portfolioVideosHref({ key: 'channel-a', kind: 'creator', accountIds: ['youtube:UC1', 'dailymotion:x1'] }, { cats: ['entertainment'], range: 'rolling7d' });
+    const u = new URL(creator, 'http://x');
+    expect(u.pathname).toBe('/videos');
+    expect(u.searchParams.get('creators')).toBe('channel-a');
+    expect(u.searchParams.get('accounts')).toBeNull();
+    expect(u.searchParams.get('cats')).toBe('entertainment');
+    expect(u.searchParams.get('range')).toBe('rolling7d');
+    const account = new URL(portfolioVideosHref({ key: 'youtube:UC9', kind: 'account', accountIds: ['youtube:UC9'] }, { v: 'youtube:abc' }), 'http://x');
+    expect(account.searchParams.get('accounts')).toBe('youtube:UC9');
+    expect(account.searchParams.get('creators')).toBeNull();
+    expect(account.searchParams.get('v')).toBe('youtube:abc');
+  });
+});
+
+describe('compare colors', () => {
+  // Series slot each platform badge uses (index.css --platform-<p>).
+  const platformSeries = { youtube: 1, dailymotion: 2, peertube: 3, niconico: 4 } as const;
+
+  it('never reuses the colors of the platforms shown on the page', () => {
+    const palette = comparePalette(['youtube', 'dailymotion', 'peertube', 'niconico']);
+    expect(palette).toHaveLength(4);
+    expect(new Set(palette).size).toBe(4);
+    for (const n of Object.values(platformSeries)) expect(palette).not.toContain(`var(--series-${n})`);
+    expect(compareColor(0, palette)).toBe(palette[0]);
+    expect(compareColor(5, palette)).toBe(palette[1]);
+  });
+
+  it('skips a platform color when that platform is present, reuses colors only when all are taken', () => {
+    expect(comparePalette(['x'])).not.toContain('var(--series-7)');
+    const all = comparePalette(['youtube', 'dailymotion', 'peertube', 'niconico', 'tiktok', 'instagram', 'x', 'twitch']);
+    expect(all).toHaveLength(4);
+    expect(new Set(all).size).toBe(4);
   });
 });
 
@@ -110,6 +150,45 @@ describe('leaders', () => {
 
   it('shares the lead on ties', () => {
     expect(countLeaders([3, 1, 3])).toEqual({ indices: [0, 2], firm: true });
+  });
+
+  it('marks nobody when every comparable value is the same (a tie of all is not a lead)', () => {
+    // e.g. 참여율 0% for all four compared creators, or the same count everywhere
+    expect(metricLeaders([mv(0), mv(0), mv(0), mv(0)])).toEqual({ indices: [], firm: false });
+    expect(countLeaders([2, 2, 2])).toEqual({ indices: [], firm: false });
+    expect(metricLeaders([mv(5), mv(5, 'lower_bound')])).toEqual({ indices: [], firm: false });
+    // two known values tie, the third is unknown: still nobody ahead
+    expect(metricLeaders([mv(5), mv(5), mv(null, 'unavailable')])).toEqual({ indices: [], firm: false });
+  });
+
+  it('marks nobody when the best value is 0 or less', () => {
+    expect(metricLeaders([mv(0), mv(null, 'unavailable')])).toEqual({ indices: [], firm: false });
+    expect(countLeaders([0, 0, null])).toEqual({ indices: [], firm: false });
+    expect(metricLeaders([mv(-3), mv(-1)])).toEqual({ indices: [], firm: false });
+    expect(metricLeaders([mv(0, 'lower_bound'), mv(0)])).toEqual({ indices: [], firm: false });
+  });
+});
+
+describe('windows before the first observation', () => {
+  const first = ts('2026-09-27T22:08');
+  const now = ts('2026-09-28T15:26');
+
+  it('detects a window that ends at or before the first observation', () => {
+    expect(windowBeforeCollection({ endMs: ts('2026-08-31T15:00') }, first, now)).toBe(true);
+    expect(windowBeforeCollection({ endMs: first }, first, now)).toBe(true);
+    expect(windowBeforeCollection({ endMs: first + 1 }, first, now)).toBe(false);
+    expect(windowBeforeCollection({ endMs: now + 3_600_000 }, first, now)).toBe(false);
+    // no observation at all: nothing can be measured
+    expect(windowBeforeCollection({ endMs: now }, null, now)).toBe(true);
+  });
+
+  it('falls back to uploads for observation-based sorts only', () => {
+    expect(effectiveCreatorSort('views_period', true)).toBe('uploads');
+    expect(effectiveCreatorSort('followers_growth', true)).toBe('uploads');
+    expect(effectiveCreatorSort('engagement', true)).toBe('uploads');
+    expect(effectiveCreatorSort('followers', true)).toBe('followers');
+    expect(effectiveCreatorSort('median_v7', true)).toBe('median_v7');
+    expect(effectiveCreatorSort('views_period', false)).toBe('views_period');
   });
 });
 
@@ -253,7 +332,10 @@ describe('analytics bundles (fixtures)', () => {
     ]);
     expect(c.platforms).toEqual(['youtube', 'dailymotion']);
     expect(c.entries[0].daily.length).toBeGreaterThan(0);
-    expect(compareSeries(c.entries).map((s) => s.label)).toEqual(['Chef', 'Solo']);
+    // Legend labels carry the slot number (non-color cue shared with the chips and table headers).
+    expect(compareSeries(c.entries).map((s) => s.label)).toEqual(['1. Chef', '2. Solo']);
+    const palette = comparePalette(['youtube', 'dailymotion']);
+    expect(compareSeries(c.entries, palette).map((s) => s.color)).toEqual([palette[0], palette[1]]);
     const onlyYt = computeComparison(index, { keys: ['chef'], range, rollingHours: 168, tz: 'UTC', now, platforms: ['youtube'] });
     expect(onlyYt.entries[0].summary!.platforms).toEqual(['youtube']);
     expect(onlyYt.entries[0].followers?.status).toBe('unavailable');

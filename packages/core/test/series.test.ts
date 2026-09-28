@@ -223,6 +223,39 @@ describe('increment', () => {
   });
 });
 
+describe('increment: boundary tolerance scales with short windows', () => {
+  // 'today' at 00:26 KST: a 26-minute window; the first collection ran at 00:13, the next at 00:23
+  const start = localDateStartUtc('2026-09-29', SEOUL);
+  const now = start + 26 * 60_000;
+
+  it('a 26-minute window is not exact from observations 13 minutes off its start', () => {
+    const v = makeVideo({ publishedAt: ts('2026-02-08T15:00Z'), obs: [makeObs(start + 13 * 60_000, 19_677_168), makeObs(start + 23 * 60_000, 19_693_711)] });
+    const m = increment(v, 'views', start, start + D, now);
+    // only what was observed inside the window: a lower bound, not 'exact'
+    expect(m).toMatchObject({ value: 16_543, status: 'lower_bound' });
+    // the daily bar for today is not labelled exact either
+    expect(dailyIncrements(v, 'views', '2026-09-29', '2026-09-29', SEOUL, now)[0].value.status).toBe('lower_bound');
+  });
+
+  it('one observation never serves as both boundaries (no fabricated exact 0)', () => {
+    const v = makeVideo({ id: 'youtube:f2oMCIMHYMg', publishedAt: ts('2026-02-08T15:00Z'), obs: [makeObs(start + 13 * 60_000, 14_444_825)] });
+    const m = increment(v, 'views', start, start + D, now);
+    expect(m.status === 'exact' && m.value === 0).toBe(false);
+    expect(m.status).toBe('unavailable');
+    // even with an explicit (large) tolerance
+    expect(increment(v, 'views', start, start + D, now, { boundaryToleranceMs: 2 * H }).status).toBe('unavailable');
+  });
+
+  it('a 24h window keeps a 72-minute tolerance; farther boundaries are interpolated when bracketed', () => {
+    const day = localDateStartUtc('2026-09-28', SEOUL);
+    const near = makeVideo({ publishedAt: ts('2026-08-01'), obs: [makeObs(day + 20 * 60_000, 1_000), makeObs(day + D + 25 * 60_000, 2_000)] });
+    expect(increment(near, 'views', day, day + D, day + 2 * D)).toMatchObject({ value: 1_000, status: 'exact' });
+    const far = makeVideo({ publishedAt: ts('2026-08-01'), obs: [makeObs(day - 90 * 60_000, 1_000), makeObs(day + 90 * 60_000, 1_300), makeObs(day + D, 2_000)] });
+    // 90 minutes off (Sydney-style offset): interpolated between the bracketing observations, not exact
+    expect(increment(far, 'views', day, day + D, day + 2 * D)).toMatchObject({ value: 850, status: 'interpolated' });
+  });
+});
+
 describe('valueAtAge', () => {
   const pub = ts('2026-09-01T09:00Z');
   const now = ts('2026-09-28T00:00Z');

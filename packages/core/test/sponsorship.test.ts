@@ -11,7 +11,7 @@ function level(title: string, description: string | null = null, tags: string[] 
 
 describe('version and shape', () => {
   it('uses the sponsorship version', () => {
-    expect(SPONSORSHIP_VERSION).toBe('sponsor-2026.09.1');
+    expect(SPONSORSHIP_VERSION).toBe('sponsor-2026.09.2');
     const s = detect('[광고] 신제품 리뷰')!;
     expect(s.version).toBe(SPONSORSHIP_VERSION);
     expect(s.level).toBe('disclosed');
@@ -181,7 +181,52 @@ describe('likely (promo cues without disclosure)', () => {
     const s = detect('나이키 에어포스 리뷰', '구매 링크는 아래에')!;
     expect(s.level).toBe('likely');
     expect(s.brands).toEqual(['Nike']);
-    expect(level('솔직 후기', '올리브영 구매처 정리')).toBe('likely');
+    // a marketplace is where to buy, not a sponsor: a weak cue next to it is not a promo
+    expect(level('솔직 후기', '올리브영 구매처 정리')).toBeNull();
+    expect(level('솔직 후기', '라운드랩 구매처 정리')).toBe('likely');
+  });
+
+  it('rejects pronouns, particles and clauses captured as brands', () => {
+    expect(detect('배터리 이야기', '이 영상은 LG화학의 제작지원을 받아 제작되었습니다. 여러분의 후원을 기다립니다')!.brands).toEqual(['LG화학']);
+    expect(detect('소상공인 이야기', '본 영상은 중소벤처기업부x소상공인시장진흥공단 에서 제작지원 받았습니다.')!.brands).toEqual([]);
+    const review = detect('제품 리뷰', '협찬 : 리뷰 의무 없는 제품 제공')!;
+    expect(review.level).toBe('disclosed');
+    expect(review.brands).toEqual([]);
+  });
+
+  it('viewer / filmer footage credits are not sponsorship', () => {
+    expect(detect('危険運転まとめ', '視聴者様及び撮影者様からご提供いただいたドライブレコーダー映像です')).toBeNull();
+    // a real product provision is still a disclosure
+    expect(level('新作コスメレビュー', 'ロート製薬様より商品をご提供いただきました')).toBe('disclosed');
+  });
+
+  it('brand aliases inside other words do not count', () => {
+    expect(detect('운동 루틴', '할인코드 MALWANG 말왕의 테스토스테론 부스터')!.brands).toEqual([]);
+    expect(detect('"뺑소니도 헤드라이트 켜고 도망" 블랙박스', '구매 링크 https://example.com')).toBeNull();
+    expect(detect('파이썬 기초', '애플 코딩 https://codingapple.com/ 강의 할인쿠폰 받기')!.brands).toEqual([]);
+    expect(detect('카메라 리뷰', '소니 할인코드 SONY10')!.brands).toEqual(['Sony']);
+  });
+
+  it('marketplaces and shop links are credited only when named as the sponsor', () => {
+    const xgimi = detect('XGIMI 프로젝터 리뷰', '#광고 XGIMI 제품 구매는 https://naver.me/abcd 네이버스토어에서')!;
+    expect(xgimi.level).toBe('disclosed');
+    expect(xgimi.brands).not.toContain('네이버');
+    expect(detect('가을 코디', '할인코드 ABC 무신사에서 구매하세요 https://musinsa.com/x')!.brands).toEqual([]);
+    expect(detect('리뷰', '네이버 협찬으로 제작된 영상입니다')!.brands).toEqual(['네이버']);
+    expect(detect('가을 코디', '이 영상은 무신사로부터 제작지원을 받았습니다')!.brands).toEqual(['무신사']);
+  });
+
+  it('near promo-only cues, hashtags count only on the cue line', () => {
+    const s = detect('CJ 이벤트', '할인코드 CJ2026 이벤트 진행중\n\n#폭스바겐 #벤츠 #자동차')!;
+    expect(s.level).toBe('likely');
+    expect(s.brands).toEqual([]);
+    expect(detect('신발 리뷰', '할인코드 NIKE10 #나이키')!.brands).toEqual(['Nike']);
+  });
+
+  it("the uploader's own name is never its sponsor", () => {
+    const s = detectSponsorship({ title: '삼성전자 신제품 공개', description: '할인코드 GALAXY 삼성전자 공식 스토어', tags: [], accountName: '삼성전자', accountHandle: '@samsungkorea' });
+    expect(s?.brands ?? []).not.toContain('삼성');
+    expect(detectSponsorship({ title: '삼성전자 신제품 공개', description: '할인코드 GALAXY 삼성전자 공식 스토어', tags: [] })!.brands).toContain('삼성');
   });
 
   it('an explicit "not sponsored" claim suppresses weak cues', () => {

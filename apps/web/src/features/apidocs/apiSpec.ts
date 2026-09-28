@@ -413,6 +413,29 @@ export function curlCommand(ex: ExampleDoc): string {
 }
 
 /** Absolute URL of a static API file on the live site. */
+/**
+ * Response header only apps/server sets on dataset-derived API responses (incl. its live `index.json`); static
+ * hosting (GitHub Pages) never sends it.
+ */
+export const SERVER_MARKER_HEADER = 'x-data-generated-at';
+
+/** Outcome of probing `api/v1/index.json` on the current site. */
+export interface StaticProbe {
+  /** A JSON response came back. */
+  ok: boolean;
+  /** It carried SERVER_MARKER_HEADER (served live by apps/server). */
+  fromServer: boolean;
+}
+
+/**
+ * The live check probes `api/v1/index.json` first (both hosts serve it). The REST health endpoint is probed only
+ * when that answer came from apps/server or there was no static index at all: on static hosting `/health` does
+ * not exist, and probing it would log a 404 in the browser console on every visit.
+ */
+export function shouldProbeServer(probe: StaticProbe): boolean {
+  return !probe.ok || probe.fromServer;
+}
+
 export function liveStaticUrl(path: string): string {
   return `${LIVE_STATIC_API}${path}`;
 }

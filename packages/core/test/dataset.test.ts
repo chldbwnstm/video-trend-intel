@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { encodeDataset, decodeDataset, buildIndex } from '../src/index.ts';
+import { encodeDataset, decodeDataset, buildIndex, queryVideos } from '../src/index.ts';
 import type { CompactDataset, Dataset, Video } from '../src/index.ts';
-import { makeObs, makeVideo, ts } from './fixtures.ts';
+import { makeDataset, makeObs, makeSourceWindow, makeVideo, ts } from './fixtures.ts';
 
 const empty = (): Dataset => ({
   schemaVersion: 1,
@@ -87,6 +87,39 @@ describe('dataset codec', () => {
       { t: 1_000_000, views: 10, likes: null, comments: null, shares: null, src: 'youtube-rss@1' },
       { t: 2_000_000, views: 20, likes: 1, comments: null, shares: null, src: 'youtube-rss@1' },
     ]);
+  });
+
+  it('never encodes an instant after generatedAt: sub-second run starts are floored, not rounded', () => {
+    // the last collection run started at .600 ms; generatedAt is that instant
+    const T = Date.UTC(2026, 8, 28, 15, 26, 16, 600);
+    const v = makeVideo({
+      id: 'dailymotion:x1',
+      publishedAt: T - 10 * 86_400_000,
+      obs: [makeObs(T - 600_000, 100_000), makeObs(T, 100_100)],
+      sourceWindows: [makeSourceWindow('views', 24, 5_000, T)],
+    });
+    const back = roundTrip(makeDataset({ videos: [v], generatedAt: T }));
+    expect(back.videos[0].obs[1].t).toBeLessThanOrEqual(back.generatedAt);
+    expect(back.videos[0].sourceWindows[0].observedAt).toBeLessThanOrEqual(back.generatedAt);
+    const r = queryVideos(buildIndex(back), { dateMode: 'activity', rollingHours: 24, tz: 'Asia/Seoul', sort: 'views_period' });
+    expect(r.rows[0].metrics.viewsPeriod.status).toBe('source_reported');
+    expect(r.notes.some((n) => n.includes('이후에 수집된'))).toBe(false);
+  });
+
+  it('repairs files written by the old rounding encoder (instants < 1 s after generatedAt)', () => {
+    const T = Date.UTC(2026, 8, 28, 15, 26, 16, 600);
+    const v = makeVideo({ id: 'dailymotion:x2', publishedAt: T - 10 * 86_400_000, obs: [makeObs(T, 1_100)], sourceWindows: [makeSourceWindow('views', 24, 50, T)] });
+    const enc = encodeDataset(makeDataset({ videos: [v], generatedAt: T }));
+    // simulate the old encoder: round to the nearest second (T -> ...:17)
+    const cols = enc.videos[0].o as unknown as number[][];
+    cols[0][0] = Math.round(T / 1000);
+    enc.videos[0].w![0][3] = Math.round(T / 1000);
+    const back = decodeDataset(JSON.parse(JSON.stringify(enc)) as CompactDataset);
+    expect(back.videos[0].obs[0].t).toBe(T);
+    expect(back.videos[0].sourceWindows[0].observedAt).toBe(T);
+    // genuinely later data (>= 1 s) is left alone
+    cols[0][0] = Math.round(T / 1000) + 5;
+    expect(decodeDataset(JSON.parse(JSON.stringify(enc)) as CompactDataset).videos[0].obs[0].t).toBe((Math.round(T / 1000) + 5) * 1000);
   });
 
   it('rejects unknown formats', () => {

@@ -240,6 +240,22 @@
     word-break: keep-all;
     overflow-wrap: anywhere;
   }
+  /*
+   * Tables size their columns from the cells' min-content width. `overflow-wrap: anywhere` (inherited from
+   * body) shrinks that to one character, so auto-layout tables crushed wrappable columns next to nowrap or
+   * fixed-width cells on phones (numbers one digit per line, "Dai/lym/oti/on"). `break-word` still breaks an
+   * overlong word that would overflow a fixed-width cell, but leaves min-content sizing alone; a table that
+   * is wider than the screen scrolls inside its own container (DataTable).
+   */
+  table {
+    overflow-wrap: break-word;
+  }
+  /* Scroll targets (pager -> results) land below the sticky top bar (h-14). */
+  [data-card],
+  [data-pager-scope],
+  [data-card] table {
+    scroll-margin-top: 4.5rem;
+  }
   :focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;

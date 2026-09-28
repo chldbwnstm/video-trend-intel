@@ -59,6 +59,30 @@ export const CREATOR_SORT_LABELS: Record<CreatorSort, string> = {
 
 export const creatorSortCodec = enumCodec<CreatorSort>(CREATOR_SORTS);
 
+/** Sorts whose values come from observations inside the window (unknown for a window before the first one). */
+export const WINDOW_OBSERVATION_SORTS: ReadonlySet<CreatorSort> = new Set<CreatorSort>(['views_period', 'followers_growth', 'engagement']);
+
+/**
+ * Sort actually applied: for a window that ends before the first observation, the observation-based sorts
+ * would rank rows that are all 0 / ≥ 0 / —, so the list falls back to uploads in the window (known from the
+ * publish dates).
+ */
+export function effectiveCreatorSort(sort: CreatorSort, beforeCollection: boolean): CreatorSort {
+  return beforeCollection && WINDOW_OBSERVATION_SORTS.has(sort) ? 'uploads' : sort;
+}
+
+/* ------------------------------------------------------------------------------------------ collection window */
+
+/**
+ * True when nothing inside the window can have been observed: the window (clipped to `now`) ends at or before
+ * the first observation of the dataset, or the dataset has no observation at all. View / follower increases of
+ * such a window are unknown (≥ 0 / —), not 0.
+ */
+export function windowBeforeCollection(w: Pick<UtcWindow, 'endMs'>, firstObservationAt: number | null, now: number): boolean {
+  if (firstObservationAt === null) return true;
+  return Math.min(w.endMs, now) <= firstObservationAt;
+}
+
 /* ------------------------------------------------------------------------------------------ links */
 
 /** Router path of a creator/account detail page. `:` and `@` stay readable (valid in a path segment). */
@@ -88,14 +112,52 @@ export function toggleCompareKey(keys: readonly string[], key: string, max = MAX
   return [...cur, key];
 }
 
+/**
+ * Video search (/videos) scoped to a portfolio's tracked videos: a linked creator by its creator id
+ * (`creators=`), a single account by its account id (`accounts=`). `params` adds range / mode / sort / cats / v.
+ */
+export function portfolioVideosHref(p: Pick<Portfolio, 'key' | 'kind' | 'accountIds'>, params: ParamPatch = {}): string {
+  const scope: ParamPatch = p.kind === 'creator' ? { creators: [p.key] } : { accounts: [...p.accountIds] };
+  return hrefWith('/videos', { ...scope, ...params });
+}
+
 /** `/compare?keys=youtube:UC1,creator-x&range=…` (`:` and `@` left readable; both are valid in a query). */
 export function compareHref(keys: readonly string[], params: ParamPatch = {}): string {
   return hrefWith('/compare', { keys: normalizeCompareKeys(keys), ...params }).replace(/%3A/gi, ':').replace(/%40/g, '@');
 }
 
+/**
+ * Categorical series slot each platform color uses (index.css: `--platform-<p>: var(--series-N)`). Keep in
+ * sync with index.css.
+ */
+const PLATFORM_SERIES: Record<Platform, number> = {
+  youtube: 1,
+  dailymotion: 2,
+  peertube: 3,
+  niconico: 4,
+  tiktok: 5,
+  instagram: 6,
+  x: 7,
+  twitch: 8,
+};
+
+/** Order in which compare slots take series colors (well separated first). */
+const COMPARE_SERIES_ORDER = [7, 5, 8, 6, 1, 2, 3, 4] as const;
+
+/**
+ * Colors of the compare slots (MAX_COMPARE of them). Platform badges share the categorical palette, so slots
+ * skip the series used by `platformsInUse` (the platforms shown on the page) while enough others remain; with
+ * more platforms than free colors the rest is reused (the slot number stays as the non-color cue).
+ */
+export function comparePalette(platformsInUse: readonly Platform[] = []): string[] {
+  const taken = new Set(platformsInUse.map((p) => PLATFORM_SERIES[p]).filter((n) => n !== undefined));
+  const order = [...COMPARE_SERIES_ORDER.filter((n) => !taken.has(n)), ...COMPARE_SERIES_ORDER.filter((n) => taken.has(n))];
+  return order.slice(0, MAX_COMPARE).map((n) => `var(--series-${n})`);
+}
+
 /** Series color of the i-th compared creator (color follows the entity's slot, never its rank). */
-export function compareColor(i: number): string {
-  return `var(--series-${(i % 8) + 1})`;
+export function compareColor(i: number, palette: readonly string[] = comparePalette()): string {
+  return palette[((i % palette.length) + palette.length) % palette.length];
 }
 
 /* ------------------------------------------------------------------------------------------ portfolios */
@@ -254,13 +316,24 @@ function rankable(m: Pick<MetricValue, 'value' | 'status'> | null | undefined): 
   return typeof m.value === 'number' && Number.isFinite(m.value) ? m.value : null;
 }
 
-/** Leader(s) of one metric across compared entities (needs >= 2 entities). */
+const noLeader = (): Leaders => ({ indices: [], firm: false });
+
+/**
+ * Leader(s) of one metric across compared entities (needs >= 2 entities).
+ * No leader when nothing leads: the best value is 0 or less (e.g. 참여율 0% everywhere, no uploads), or every
+ * comparable value is the same (a tie of all is not a lead).
+ */
 export function metricLeaders(values: readonly (Pick<MetricValue, 'value' | 'status'> | null | undefined)[]): Leaders {
-  if (values.length < 2) return { indices: [], firm: false };
+  if (values.length < 2) return noLeader();
   const nums = values.map(rankable);
   let best = -Infinity;
-  for (const v of nums) if (v !== null && v > best) best = v;
-  if (best === -Infinity) return { indices: [], firm: false };
+  let comparable = 0;
+  for (const v of nums) {
+    if (v === null) continue;
+    comparable++;
+    if (v > best) best = v;
+  }
+  if (best === -Infinity || best <= 0) return noLeader();
   const indices: number[] = [];
   let firm = true;
   for (let i = 0; i < values.length; i++) {
@@ -268,6 +341,7 @@ export function metricLeaders(values: readonly (Pick<MetricValue, 'value' | 'sta
     if (nums[i] === best) indices.push(i);
     else if (!m || !FIRM.has(m.status)) firm = false;
   }
+  if (comparable >= 2 && indices.length === comparable) return noLeader();
   // Lower-bound ties cannot be ordered either.
   if (indices.length > 1 && indices.some((i) => !FIRM.has(values[i]!.status))) firm = false;
   return { indices, firm };
@@ -660,15 +734,15 @@ export function computeComparison(index: DatasetIndex, input: RangeInput & { key
   return { window: w, entries, platforms, missingFollowerPlatforms: platformsWithoutFollowers(idx.dataset.accounts, platforms) };
 }
 
-/** Overlaid daily series (one per found entry, colored by its compare slot). */
-export function compareSeries(entries: readonly CompareEntry[]): GrowthSeries[] {
+/** Overlaid daily series (one per found entry, colored and numbered by its compare slot). */
+export function compareSeries(entries: readonly CompareEntry[], palette: readonly string[] = comparePalette()): GrowthSeries[] {
   const out: GrowthSeries[] = [];
   entries.forEach((e, i) => {
     if (!e.found) return;
     out.push({
       id: `c${i}`,
-      label: e.name,
-      color: compareColor(i),
+      label: `${i + 1}. ${e.name}`,
+      color: compareColor(i, palette),
       points: e.daily.map((d) => ({ x: d.date, value: d.metric.status === 'unavailable' ? null : d.metric.value, status: d.metric.status })),
     });
   });

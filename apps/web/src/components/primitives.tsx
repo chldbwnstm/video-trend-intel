@@ -98,7 +98,7 @@ export interface CardProps extends HTMLAttributes<HTMLElement> {
 
 export function Card({ as: Tag = 'section', flush, className, children, ...rest }: CardProps) {
   return (
-    <Tag className={cx('min-w-0 rounded-xl border border-line bg-surface shadow-card', !flush && 'p-4 sm:p-5', className)} {...rest}>
+    <Tag data-card="" className={cx('min-w-0 rounded-xl border border-line bg-surface shadow-card', !flush && 'p-4 sm:p-5', className)} {...rest}>
       {children}
     </Tag>
   );

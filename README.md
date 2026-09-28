@@ -63,9 +63,9 @@ ContentGraph, API)을 공개 데이터로 다시 만들고, 숫자마다 출처�
 
 | 어댑터 | 플랫폼 | 인증 | 발견 방식 | 지표 |
 |---|---|---|---|---|
-| `youtube-rss` | YouTube | 없음 | 시드 채널 391개(국내 350, 해외 41)의 RSS, **채널별 최신 업로드 15개** | 조회, 좋아요 |
-| `dailymotion` | Dailymotion | 없음 | 공식 API `/videos` (채널·국가·언어·정렬·검색 시드 70개) | 조회, 좋아요, 원천 제공 24시간·7일·30일 조회 |
-| `peertube` | PeerTube | 없음 | SepiaSearch 검색 후 원 인스턴스 API로 갱신 | 조회, 좋아요 |
+| `youtube-rss` | YouTube | 없음 | 시드 채널 391개(국내 350, 해외 41)의 RSS, **채널별 최신 업로드 15개** (업로드가 빨라 15개가 7일도 안 되는 채널은 긴 영상·Shorts 재생목록 피드에서 각 15개 더) | 조회, 좋아요 |
+| `dailymotion` | Dailymotion | 없음 | 공식 API `/videos` (채널·국가·언어·정렬·검색 시드 70개, 국가 조건 없는 시드는 `localization=en_US` 고정) | 조회, 좋아요, 원천 제공 24시간·7일·30일 조회 |
+| `peertube` | PeerTube | 없음 | SepiaSearch로 발견, 수치는 원 인스턴스 API에서만 읽음 | 조회, 좋아요, 댓글 |
 | `niconico` | niconico | 없음 | Snapshot Search API v2 (하루 1회 갱신되는 스냅샷, 관측 시각은 스냅샷 시각) | 조회, 좋아요, 댓글 |
 | `youtube-data-api` | YouTube | `YOUTUBE_API_KEY` | 키워드 시드 151개로 search.list (KR, ko) | 조회, 좋아요, 댓글, 구독자 |
 | `tiktok-research` | TikTok | `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET` | Research API 영상 검색 (연구 승인 필요) | 조회, 좋아요, 댓글, 공유 |
@@ -81,8 +81,14 @@ PeerTube 950), 계정 2,208개, 크리에이터 15명(그중 14명은 플랫폼 
 
 - 이 데이터는 **플랫폼 전체가 아닙니다**. 시드 채널, 검색 질의, 공개 API가 돌려준 결과의 집합입니다.
   "플랫폼 1위"가 아니라 "수집된 영상 중 1위"로 읽어야 합니다.
-- YouTube RSS는 채널당 최신 15개 업로드만 줍니다. 오래된 영상이나 시드에 없는 채널은 들어오지 않습니다.
-  API 키를 넣으면 키워드 검색으로 범위가 넓어집니다.
+- YouTube RSS는 채널당 최신 15개 업로드만 줍니다(빠른 채널은 긴 영상·Shorts 재생목록으로 각 15개 더). 모든 피드에서
+  밀려난 영상은 더는 관측되지 않아 V7·V30을 계산할 수 없고, 실행마다 그런 영상 수를 데이터 범위 화면에 기록합니다.
+  오래된 영상이나 시드에 없는 채널은 들어오지 않습니다. API 키를 넣으면 키워드 검색으로 범위가 넓어집니다.
+- 불법 도박·성매매·대출 광고로 판별된 영상(주로 Dailymotion 인기 목록에 섞여 들어오는 홍보 영상)은 저장하지 않고,
+  이미 저장된 것은 내보내기에서 뺍니다. 뺀 개수는 데이터 범위 화면의 메모에 남습니다.
+- Dailymotion의 국가 조건 없는 시드는 요청 위치에 따라 결과가 달라집니다. 2026-09-28 수집을 GitHub Actions로
+  옮긴 날 미국 영상 약 1,200개가 새 영상으로 한꺼번에 들어왔으니 그날 전후의 신규 업로드 추이는 주의해서 보세요.
+  지금은 `localization=en_US`로 고정합니다(`DAILYMOTION_GLOBAL_LOCALIZATION`으로 변경).
 - 조회수 이력은 처음 수집한 시점(2026-09-28)부터 쌓입니다. 이전 증가량은 알 수 없습니다.
 - niconico는 하루 한 번 갱신되는 스냅샷이라 하루보다 짧은 기간의 증가량은 정확하지 않습니다.
 - 협찬 추정은 제목·설명의 규칙 기반 추정입니다. 표기된 협찬(disclosed)과 구분해 보여 줍니다.
@@ -151,7 +157,7 @@ GitHub Actions의 3시간 주기 파이프라인 (`.github/workflows/collect-dep
 ```
  restore  Release "data-store" / store.sqlite.gz  -->  data/store.sqlite
  collect  npx tsx packages/collector/src/cli.ts collect      (secrets -> keyed adapters)
- save     guard: quick_check, size -20%, row counts, race   -->  store.sqlite.gz (+ store.prev.sqlite.gz)
+ save     guard: quick_check, size -20%, row counts, race; VACUUM INTO copy  -->  store.sqlite.gz (+ store.prev.sqlite.gz)
  export   data/export/dataset.json  -->  apps/web/public/data/dataset.json
  build    vite build -> apps/web/dist,  static API -> dist/api/v1,  .nojekyll, data/meta.json
  deploy   actions/deploy-pages  -->  https://chldbwnstm.github.io/video-trend-intel/
@@ -266,14 +272,26 @@ curl --compressed -o dataset.json https://chldbwnstm.github.io/video-trend-intel
 - **손상 방지.** 업로드 전에 SQLite 무결성 검사를 하고, 복원본보다 20% 넘게 작아졌거나 영상·관측 행 수가 줄었으면
   업로드하지 않고 실패합니다. 실행 중에 다른 곳에서 자산이 바뀌었어도 덮어쓰지 않습니다. 현재 자산이 없거나
   깨졌으면 직전 실행본으로 복원합니다. 복원할 수 없는데 자산이 있으면 빈 저장소로 시작하지 않고 멈춥니다.
-- **push 실행.** `main`에 코드가 push되면 저장된 데이터로 사이트만 다시 빌드합니다. 저장소가 아직 없을 때만 수집합니다.
+- **업로드 크기.** 업로드하는 것은 `VACUUM INTO`로 만든 압축 사본이라 지운 행이 남긴 빈 페이지는 올라가지 않습니다.
+  원천 제공 기간 조회수(Dailymotion 24시간·7일·30일)는 영상·기간별 최신 값 하나만 보관합니다(예전에는 실행마다 3행씩
+  쌓여 저장소의 절반을 차지했지만 읽는 곳이 없었음). 원 관측 행은 지우지 않습니다.
+- **push 실행.** `main`에 코드가 push되면 저장된 데이터로 사이트만 다시 빌드합니다. 저장소가 아직 없거나 마지막 수집이
+  150분(`STALE_COLLECT_MIN`) 넘게 지났을 때는 수집도 합니다. 실행은 한 번에 하나만 대기할 수 있어서, push 실행이
+  대기 중이던 예약 수집을 밀어낸 경우에도 3시간 주기 수집이 빠지지 않게 하기 위해서입니다.
+- **수집 시간 한도.** 원천(어댑터)마다 12분(`COLLECT_ADAPTER_TIMEOUT_MIN` 변수로 변경) 안에 끝나지 않으면 그 원천만
+  실패로 기록하고 다음 원천으로 넘어갑니다. 수집 단계 전체 한도는 55분입니다. YouTube RSS는 연속 10회 네트워크
+  오류·429·5xx가 나면(요청 제한 추정) 그때까지 받은 결과만 저장하고 멈춥니다.
+- **토큰 권한.** 워크플로 기본 권한은 읽기 전용입니다. 빌드 작업만 `contents: write`(릴리스 자산)와
+  `actions: write`(예약 유지)를 받고, `GH_TOKEN`은 `gh`를 부르는 세 단계(복원, 업로드, 예약 유지)에만 넘깁니다.
+  `npm ci`·수집기·빌드 단계에는 토큰이 없고, checkout은 토큰을 `.git/config`에 남기지 않습니다. Pages 쓰기 권한
+  (`pages: write`, `id-token: write`)은 배포 작업에만 있습니다. 러너는 `ubuntu-24.04`로 고정합니다.
 - **수집 실패.** 켜진 원천이 모두 실패해도 실패 기록을 저장하고 사이트를 배포한 뒤, 워크플로를 실패로 표시합니다.
   수집 로그는 실행마다 `collector-logs-*` 아티팩트(14일 보관)로 남습니다.
 - **수동 실행** (Actions → Collect & deploy → Run workflow):
 
   | 입력 | 기본 | 뜻 |
   |---|---|---|
-  | `collect` | 켬 | 끄면 수집 없이 다시 빌드만 |
+  | `collect` | 켬 | 끄면 수집 없이 다시 빌드만 (마지막 수집이 150분 넘게 지났으면 수집함) |
   | `sources` | 비움 | 이번 실행에서 수집할 어댑터 id (쉼표 구분) |
   | `allow_shrink` | 끔 | 축소 가드 해제 (의도한 정리·마이그레이션 때만) |
   | `allow_empty` | 끔 | 저장소 자산이 모두 깨졌을 때 빈 저장소로 다시 시작 |
@@ -307,7 +325,8 @@ curl --compressed -o dataset.json https://chldbwnstm.github.io/video-trend-intel
 조정값은 Secrets 대신 **Variables**(같은 화면의 Variables 탭)에 넣습니다: `IG_BUSINESS_USERNAMES`, `IG_HASHTAGS`,
 `YOUTUBE_SEARCHES_PER_RUN`, `YOUTUBE_REGION_CODE`, `TIKTOK_REGION_CODES`, `X_QUERIES_PER_RUN`, `TWITCH_LANGUAGE` 등
 (전체 목록과 설명은 `.env.example`). 수집 범위 전체를 줄일 때는 `COLLECT_SOURCES`, `COLLECT_MAX_REQUESTS`,
-`EXPORT_BUDGET_MB` 변수를 씁니다.
+`EXPORT_BUDGET_MB` 변수를 씁니다. 원천별 시간 한도는 `COLLECT_ADAPTER_TIMEOUT_MIN`(기본 12분), Dailymotion의 국가 조건
+없는 시드 기준 지역은 `DAILYMOTION_GLOBAL_LOCALIZATION`(기본 `en_US`)입니다.
 
 ## 처음 배포하기
 
@@ -367,8 +386,14 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\unregister-task.ps1
   받습니다. 정적 API는 미리 계산한 조합만 제공하고, 임의 필터는 서버 API에서만 가능합니다.
 - **만들지 않은 기능.** 시청자 인구통계, Audience Ratings, Consumer Insights는 패널·동의 데이터가 없어 제공하지 않습니다.
 - **플랫폼 간 비교.** 플랫폼마다 조회 정의가 달라서 섞은 순위는 참고용입니다.
-- **저장소 크기.** 원 관측은 지우지 않고 쌓입니다. 릴리스 자산 한도(2 GB)에 한참 못 미치지만 장기적으로는 압축·보존
-  정책이 필요합니다. 저장소에 "immutable releases"를 켜면 자산을 갱신할 수 없으니 켜지 마세요.
+- **저장소 크기.** 원 관측은 지우지 않고 쌓입니다(하루 약 8 MB, 30일 모의 실행 기준 약 280 MB, gzip 약 47 MB). 릴리스 자산
+  한도(2 GB)에 한참 못 미치지만 몇 달 뒤에는 오래된 원 관측을 솎아 내는 보존 정책이 필요합니다(SPEC의 "원 관측은
+  지우지 않음" 원칙을 바꾸는 결정이라 아직 넣지 않음). 저장소에 "immutable releases"를 켜면 자산을 갱신할 수 없으니
+  켜지 마세요.
+- **내보내기 크기 예산.** `dataset.json`이 40 MB를 넘으면 영상을 뺍니다. 삭제·비공개 영상과 7일 넘게 관측되지 않은
+  영상(마지막 관측이 오래된 순)부터, 다음은 게시 7일이 지난 영상, 마지막으로 최근 7일 영상 순입니다. 뒤의 두 단계는
+  플랫폼마다 따로 매긴 일평균 조회수 백분위로 고르므로 조회수 단위가 작은 PeerTube·niconico나 막 올라온 영상이
+  먼저 사라지지 않습니다. 뺀 영상 수는 플랫폼별로 데이터 범위 화면의 메모에 남습니다.
 
 ## 로드맵
 

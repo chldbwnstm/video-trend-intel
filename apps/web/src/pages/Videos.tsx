@@ -42,6 +42,8 @@ import { formatInteger } from '../lib/format.ts';
 import { CROSS_PLATFORM_CAVEAT } from '../lib/platform.ts';
 import { readStored, writeStored } from '../lib/storage.ts';
 import { tzShort } from '../lib/timezones.ts';
+import { collectionTimeline } from '../lib/collection.ts';
+import type { CollectionTimeline } from '../lib/collection.ts';
 import {
   ageCodec,
   dateModeCodec,
@@ -117,7 +119,8 @@ export default function VideosPage() {
   const [minViews, setMinViews] = useUrlState<number>('minViews', 0, { codec: minViewsCodec, ...PAGE_RESET });
   const [accounts, setAccounts] = useUrlState<string[]>('accounts', [], PAGE_RESET);
   const [creators, setCreators] = useUrlState<string[]>('creators', [], PAGE_RESET);
-  const [videoId] = useUrlState<string>('v', '');
+  // The detail drawer is a selection: opening pushes an entry (Back closes it), closing pops it again.
+  const [videoId, setVideoId] = useUrlState<string>('v', '', { history: 'selection' });
   const sort = effectiveSort(sortRaw, mode);
 
   const [dense, setDenseState] = useState(() => readStored(DENSE_KEY) === '1');
@@ -127,6 +130,7 @@ export default function VideosPage() {
   };
 
   const facets = useMemo(() => videoFacets(dataset.videos), [dataset]);
+  const timeline = useMemo(() => collectionTimeline(dataset), [dataset]);
   const filters = { q, platforms, cats, topics, langs, countries, formats, sponsored, minViews, accounts, creators };
   const filterCount = activeFilterCount(filters);
 
@@ -178,8 +182,8 @@ export default function VideosPage() {
     setSortRaw(key);
     if (d) setDir(d);
   };
-  const openVideo = useCallback((id: string) => update({ v: id }, { replace: false }), [update]);
-  const closeVideo = useCallback(() => update({ v: null }), [update]);
+  const openVideo = useCallback((id: string) => setVideoId(id), [setVideoId]);
+  const closeVideo = useCallback(() => setVideoId(''), [setVideoId]);
   const filterAccount = (accountId: string) => update({ accounts: [accountId], v: null, page: null });
   const clearFilters = () => update({ ...CLEAR_FILTERS_PATCH });
   const getCsv = () => queryResultToCsv(fullVideoQuery(index, toVideoQuery(input)), tz, { dateMode: mode, ageDays: mode === 'age' ? age : null });
@@ -219,10 +223,9 @@ export default function VideosPage() {
         eyebrow="Video Intelligence"
         title="영상 탐색"
         description="추적 중인 영상을 검색·필터하고 세 가지 날짜 기준 중 하나로 비교함. 모든 순위는 이 서비스가 수집한 영상 범위 기준이며 플랫폼 전체 순위가 아님."
-        // The shared header keeps actions beside the title; below `sm` they move to their own row instead.
-        actions={<div className="hidden items-center gap-2 sm:flex">{pageActions}</div>}
+        // PageHeader puts actions on their own row below `sm`.
+        actions={pageActions}
       />
-      <div className="-mt-2 flex flex-wrap items-center gap-2 sm:hidden">{pageActions}</div>
 
       <FilterBar label="영상 탐색 필터">
         <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -337,7 +340,7 @@ export default function VideosPage() {
               linkParams={linkParams}
               filterCount={filterCount}
               onClearFilters={clearFilters}
-              collectionStart={facets.collectionStart}
+              timeline={timeline}
               rolling={rollingHours !== null}
               onUseUpload={() => onModeChange('upload')}
               onUseRolling={() => setSpec('rolling7d')}
@@ -378,7 +381,7 @@ interface ResultsProps {
   linkParams: ParamPatch;
   filterCount: number;
   onClearFilters: () => void;
-  collectionStart: number | null;
+  timeline: CollectionTimeline;
   rolling: boolean;
   onUseUpload: () => void;
   onUseRolling: () => void;
@@ -485,7 +488,7 @@ function Results(p: ResultsProps) {
           age={age}
           label={primaryLabel}
           summary={data.primary}
-          collectionStart={p.collectionStart}
+          timeline={p.timeline}
           rolling={p.rolling}
           onUseUpload={p.onUseUpload}
           onUseRolling={p.onUseRolling}

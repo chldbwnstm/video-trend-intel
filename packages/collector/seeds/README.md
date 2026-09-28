@@ -4,7 +4,8 @@ The source adapters read these files through `CollectContext.seeds` (types in `.
 interface). A seed is a discovery hint. It is never a metric and never a claim about the whole platform. A
 category in a seed is a taxonomy id: one of the 20 `TOP_LEVEL_CATEGORY_IDS`, or a subcategory from
 `packages/core/src/taxonomy.ts` such as `music/kpop` or `food/mukbang`. The classifier treats it as account
-evidence with weight 0.6, and title, tag and source evidence can override it.
+evidence with weight 0.7 (`ACCOUNT_CONFIDENCE`, since classifier `rules-2026.09.2`). A single ambiguous title
+or tag keyword (weight 0.63) cannot override it; two keywords, or source evidence, can.
 
 Last built and verified: **2026-09-28**, from Asia/Seoul. All requests used polite rates: YouTube at most
 2 requests per second, Dailymotion at most 4 per second, and niconico and SepiaSearch at most 1 per second.

@@ -1,12 +1,16 @@
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptySeeds } from '@vti/collector';
 import type { SourceAdapter } from '@vti/collector';
-import { Scheduler, createCollectJob, type JobSummary } from '../src/scheduler.ts';
-import { configFromEnv, DatasetLoader, firstRunTime } from '../src/main.ts';
+import { createApp } from '../src/app.ts';
+import { RUN_ERROR_PUBLIC, Scheduler, createCollectJob, type JobSummary } from '../src/scheduler.ts';
+import { configFromEnv, DatasetLoader, firstRunTime, LOAD_ERROR_PUBLIC, serverStatus } from '../src/main.ts';
 import { fixtureCompactJson, NOW } from './fixtures.ts';
+
+/** Absolute filesystem paths in JSON text: a Windows drive path (escaped or not) or a POSIX root dir. */
+const ABS_PATH_RE = /[A-Za-z]:(\\\\|\\|\/)|"\/(tmp|var|home|Users|private|app|root|mnt|srv|opt)\//;
 
 function memLog() {
   const lines: string[] = [];
@@ -83,7 +87,9 @@ describe('Scheduler', () => {
     const s = new Scheduler({ intervalMs: 5_000, job, log, firstRunAt: 1_000, minDelayMs: 0 });
     s.start();
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(s.status().lastRun).toMatchObject({ ok: false, error: 'network down' });
+    // Raw error only in the verbose status; the public one (health) gets a generic note and no details.
+    expect(s.status(true).lastRun).toMatchObject({ ok: false, message: 'collection failed', error: 'network down' });
+    expect(s.status().lastRun).toEqual({ startedAt: 1_000, finishedAt: 1_000, ok: false, message: 'collection failed', error: RUN_ERROR_PUBLIC });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(n).toBe(2);
     expect(s.status()).toMatchObject({ runs: 2, failures: 2 });
@@ -174,6 +180,24 @@ describe('createCollectJob (collector + export)', () => {
     expect(res2.message).toContain('all sources failed');
     expect((res2.details as any).export.videos).toBe(1);
     loader.close();
+
+    // A failed export: the public message names no path; the raw error (with the path) goes to `error` only.
+    const blocked = join(dir, 'blocked');
+    writeFileSync(blocked, 'not a directory');
+    const job3 = createCollectJob({ dbPath: join(dir, 'store.sqlite'), exportDir: join(blocked, 'export'), logDir: null, console: false, env: {}, adapters: [adapter], seeds: emptySeeds() });
+    const res3 = await job3();
+    expect(res3.ok).toBe(false);
+    expect(res3.message).toBe('1/1 source(s) ok; export failed (see the server log)');
+    expect(res3.error).toContain('export failed: ');
+    expect(res3.error).toContain(basename(dir));
+    const s = new Scheduler({ intervalMs: 60_000, job: job3, log: memLog() });
+    await s.runNow();
+    const pub = JSON.stringify(s.status());
+    expect(pub).not.toContain(basename(dir));
+    expect(pub).not.toMatch(ABS_PATH_RE);
+    expect(s.status().lastRun).toMatchObject({ ok: false, message: res3.message, error: RUN_ERROR_PUBLIC });
+    expect(s.status().lastRun).not.toHaveProperty('details');
+    expect(JSON.stringify(s.status(true))).toContain(basename(dir));
   });
 });
 
@@ -191,10 +215,10 @@ describe('firstRunTime / config', () => {
 
   it('reads the environment with defaults', () => {
     const c = configFromEnv({});
-    expect(c).toMatchObject({ port: 8787, host: '0.0.0.0', intervalMin: 180, rateLimitPerMin: 120, trustProxy: false, copyToWeb: null });
+    expect(c).toMatchObject({ port: 8787, host: '0.0.0.0', intervalMin: 180, rateLimitPerMin: 120, trustProxy: false, copyToWeb: null, healthVerbose: false });
     expect(c.exportDir.replace(/\\/g, '/')).toMatch(/\/data\/export$/);
-    const d = configFromEnv({ PORT: '9000', COLLECT_INTERVAL_MIN: '0', DATA_DIR: 'x/y', TRUST_PROXY: '1', RATE_LIMIT_PER_MIN: '0' });
-    expect(d).toMatchObject({ port: 9000, intervalMin: 0, trustProxy: true, rateLimitPerMin: 0 });
+    const d = configFromEnv({ PORT: '9000', COLLECT_INTERVAL_MIN: '0', DATA_DIR: 'x/y', TRUST_PROXY: '1', RATE_LIMIT_PER_MIN: '0', HEALTH_VERBOSE: '1' });
+    expect(d).toMatchObject({ port: 9000, intervalMin: 0, trustProxy: true, rateLimitPerMin: 0, healthVerbose: true });
     expect(d.dbPath.replace(/\\/g, '/')).toMatch(/\/x\/y\/store\.sqlite$/);
     expect(() => configFromEnv({ PORT: 'abc' })).toThrow(/PORT/);
   });
@@ -216,15 +240,14 @@ describe('DatasetLoader (hot swap)', () => {
     const exportDir = join(dir, 'export');
     const loader = new DatasetLoader(exportDir, [fallback], log);
     expect(await loader.loadInitial()).toBe(true);
-    expect(loader.status()).toMatchObject({ fromExport: false, generatedAt: NOW - 3_600_000, loads: 1 });
+    expect(loader.status()).toMatchObject({ file: 'fallback.json', fromExport: false, generatedAt: NOW - 3_600_000, loads: 1 });
     expect(loader.index?.dataset.videos).toHaveLength(5);
 
     // An export appears -> swapped in.
-    const { mkdirSync } = await import('node:fs');
     mkdirSync(exportDir, { recursive: true });
     writeFileSync(join(exportDir, 'dataset.json'), fixtureCompactJson(NOW));
     await loader.checkForUpdate();
-    expect(loader.status()).toMatchObject({ fromExport: true, generatedAt: NOW, loads: 2 });
+    expect(loader.status()).toMatchObject({ file: 'dataset.json', fromExport: true, generatedAt: NOW, loads: 2 });
     const good = loader.index;
 
     // Unchanged file -> no reload.
@@ -237,7 +260,11 @@ describe('DatasetLoader (hot swap)', () => {
     await loader.checkForUpdate();
     expect(loader.index).toBe(good);
     expect(loader.status().failures).toBe(1);
-    expect(loader.status().lastError).toMatch(/schemaVersion/);
+    // Public status: generic error, no path. Verbose (HEALTH_VERBOSE=1): the raw `<path>: <message>`.
+    expect(loader.status().lastError).toBe(LOAD_ERROR_PUBLIC);
+    expect(loader.status().lastErrorAt).toEqual(expect.any(Number));
+    expect(loader.status(true).lastError).toMatch(/schemaVersion/);
+    expect(loader.status(true).lastError).toContain(join(exportDir, 'dataset.json'));
     await loader.checkForUpdate();
     expect(loader.status().failures).toBe(1);
 
@@ -245,8 +272,22 @@ describe('DatasetLoader (hot swap)', () => {
     writeFileSync(join(exportDir, 'dataset.json'), fixtureCompactJson(NOW + 3_600_000));
     utimesSync(join(exportDir, 'dataset.json'), new Date(), new Date(Date.now() + 10_000));
     await loader.checkForUpdate();
-    expect(loader.status()).toMatchObject({ generatedAt: NOW + 3_600_000, loads: 3, lastError: null });
+    expect(loader.status()).toMatchObject({ generatedAt: NOW + 3_600_000, loads: 3, lastError: null, lastErrorAt: null });
     loader.close();
+  });
+
+  it('status() names no filesystem path unless verbose', async () => {
+    const exportDir = join(dir, 'export');
+    mkdirSync(exportDir, { recursive: true });
+    writeFileSync(join(exportDir, 'dataset.json'), fixtureCompactJson(NOW));
+    const loader = new DatasetLoader(exportDir, [], memLog());
+    expect(await loader.loadInitial()).toBe(true);
+    const pub = loader.status();
+    expect(pub).not.toHaveProperty('path');
+    expect(pub).not.toHaveProperty('exportDir');
+    expect(JSON.stringify(pub)).not.toContain(basename(dir));
+    expect(JSON.stringify(pub)).not.toMatch(ABS_PATH_RE);
+    expect(loader.status(true)).toMatchObject({ path: join(exportDir, 'dataset.json'), exportDir, file: 'dataset.json' });
   });
 
   it('reports no dataset when nothing exists', async () => {
@@ -255,5 +296,64 @@ describe('DatasetLoader (hot swap)', () => {
     expect(await loader.loadInitial()).toBe(false);
     expect(loader.index).toBeNull();
     expect(log.lines.some((l) => l.startsWith('W no dataset found'))).toBe(true);
+  });
+});
+
+describe('GET /api/v1/health (server wiring)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'vti-health-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is public-safe by default (no filesystem path, no raw error) and detailed only when verbose', async () => {
+    const exportDir = join(dir, 'export');
+    mkdirSync(exportDir, { recursive: true });
+    const exportFile = join(exportDir, 'dataset.json');
+    const fallback = join(dir, 'fallback.json');
+    writeFileSync(fallback, fixtureCompactJson(NOW));
+    const loader = new DatasetLoader(exportDir, [fallback], memLog());
+    expect(await loader.loadInitial()).toBe(true);
+    writeFileSync(exportFile, '{"schemaVersion": 99, "videos": []}'); // broken export -> fallback kept + lastError
+    await loader.checkForUpdate();
+    const scheduler = new Scheduler({
+      intervalMs: 60_000,
+      log: memLog(),
+      job: async () => {
+        throw new Error(`EACCES: permission denied, open '${join(dir, 'store.sqlite')}'`);
+      },
+    });
+    await scheduler.runNow();
+
+    const health = async (verbose: boolean) => {
+      const app = createApp({ getIndex: () => loader.index, rateLimit: false, getStatus: () => serverStatus(loader, scheduler, verbose) });
+      const res = await app.request('/api/v1/health');
+      expect(res.status).toBe(200);
+      return res.text();
+    };
+
+    const text = await health(false);
+    expect(text).not.toContain(basename(dir));
+    expect(text).not.toMatch(ABS_PATH_RE);
+    expect(text).not.toMatch(/schemaVersion|EACCES/);
+    const body = JSON.parse(text);
+    expect(body.status).toBe('ok');
+    expect(body.loader).toMatchObject({ file: 'fallback.json', fromExport: false, failures: 1, lastError: LOAD_ERROR_PUBLIC });
+    expect(body.scheduler.lastRun).toMatchObject({ ok: false, message: 'collection failed', error: RUN_ERROR_PUBLIC });
+
+    const verbose = JSON.parse(await health(true));
+    expect(verbose.loader.path).toBe(fallback);
+    expect(verbose.loader.lastError).toContain(exportFile);
+    expect(verbose.scheduler.lastRun.error).toContain('EACCES');
+    loader.close();
+    await scheduler.stop();
+  });
+
+  it('reports a disabled scheduler without one', async () => {
+    const loader = new DatasetLoader(join(dir, 'export'), [], memLog());
+    expect(serverStatus(loader, null).scheduler).toEqual({ enabled: false, intervalMin: 0 });
+    expect(serverStatus(loader, null).loader).toMatchObject({ file: null, lastError: null });
   });
 });

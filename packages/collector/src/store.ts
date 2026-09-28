@@ -3,6 +3,9 @@
  *
  * Raw observations are append-only and never compacted here (compaction happens only in the export).
  * Deleted / private videos are never removed: their `status` changes (SPEC "Store").
+ * Source-reported windows (`source_windows`, e.g. Dailymotion views_last_day/week/month) keep only the latest
+ * value per (video, metric, window): nothing reads their history (the export uses the latest), and storing three
+ * rows per video per run made them over half of the store (48k window rows vs 30k observations after 3 runs).
  *
  * Schema versions are tracked with `PRAGMA user_version`; every migration is idempotent
  * (`CREATE ... IF NOT EXISTS`), so opening an existing database twice is safe.
@@ -27,6 +30,7 @@ import type {
   VideoStatus,
 } from '@vti/core';
 import { adapterById } from './sources/index.ts';
+import { declaredLanguageConflicts, decodeEntities, detectLanguage } from './sources/util.ts';
 import type { RawAccount, RawVideo } from './types.ts';
 
 /* ------------------------------------------------------------------------------------------
@@ -92,13 +96,20 @@ export const REFRESH_INTERVAL_SLACK = 0.95;
 export const OLD_TOP_FRACTION = 0.2;
 export const OLD_TOP_MIN = 100;
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /* ------------------------------------------------------------------------------------------
  * Migrations
  * ---------------------------------------------------------------------------------------- */
 
-const MIGRATIONS: { version: number; sql: string }[] = [
+interface Migration {
+  version: number;
+  sql: string;
+  /** Data migration run after `sql`, in the same transaction. */
+  run?: (store: Store) => void;
+}
+
+const MIGRATIONS: Migration[] = [
   {
     version: 1,
     sql: `
@@ -254,7 +265,31 @@ CREATE TABLE IF NOT EXISTS source_state (
 );
 `,
   },
+  {
+    // v2: source windows keep only the latest row per (video, metric, window); one-time repair of text stored by
+    // older adapters (see repairStoredVideos).
+    version: 2,
+    sql: `
+DELETE FROM source_windows WHERE EXISTS (
+  SELECT 1 FROM source_windows n
+  WHERE n.video_id = source_windows.video_id AND n.metric = source_windows.metric AND n.window_hours = source_windows.window_hours
+    AND (n.observed_at > source_windows.observed_at OR (n.observed_at = source_windows.observed_at AND n.src > source_windows.src))
+);
+`,
+    run: (store) => {
+      store.repairStoredVideos();
+    },
+  },
 ];
+
+export interface RepairStats {
+  /** niconico / PeerTube rows whose title, tags or description still held HTML entities (`&quot;`, `&amp;`). */
+  entities: number;
+  /** PeerTube rows whose declared ko/ja language contradicted a Latin-only text (language cleared). */
+  peertubeLanguage: number;
+  /** YouTube RSS rows whose seed-language fallback had been labelled 'detected' (label cleared; language cleared when it contradicted the text). */
+  seedLanguage: number;
+}
 
 /* ------------------------------------------------------------------------------------------
  * Public row types
@@ -366,6 +401,14 @@ export interface RefreshCandidateOptions {
   tiers?: readonly RefreshTier[];
   oldTopFraction?: number;
   oldTopMin?: number;
+  /**
+   * The source serves periodic snapshots at this interval (niconico: daily). Videos already observed at the newest
+   * snapshot in the store are not due until a newer snapshot can exist (`now - newest >= interval * slack`):
+   * requesting them again returns the same snapshot.
+   */
+  snapshotIntervalMs?: number;
+  /** Only videos this source has returned before (`video_sources`). */
+  onlySource?: string;
 }
 
 export interface StoreCounts {
@@ -638,6 +681,7 @@ export class Store {
       if (m.version <= current) continue;
       this.transaction(() => {
         this.db.exec(m.sql);
+        m.run?.(this);
         this.db.exec(`PRAGMA user_version = ${m.version}`);
       });
     }
@@ -969,7 +1013,10 @@ export class Store {
     }));
   }
 
-  /** Store source-reported window metrics (duplicates ignored). Returns how many rows were added. */
+  /**
+   * Store source-reported window metrics, keeping only the latest row per (video, metric, window): a newer value
+   * replaces the stored one, an older or identical one is ignored. Returns how many rows were written.
+   */
   addSourceWindows(videoId: string, windows: readonly SourceWindowMetric[]): number {
     let added = 0;
     for (const w of windows) {
@@ -977,13 +1024,25 @@ export class Store {
       if (typeof w.value !== 'number' || !Number.isFinite(w.value) || w.value < 0) continue;
       if (typeof w.windowHours !== 'number' || !(w.windowHours > 0)) continue;
       if (!Number.isFinite(w.observedAt)) continue;
+      const observedAt = Math.round(w.observedAt);
+      const latest = this.get(
+        'SELECT observed_at, src FROM source_windows WHERE video_id = ? AND metric = ? AND window_hours = ? ORDER BY observed_at DESC, src DESC LIMIT 1',
+        videoId,
+        w.metric,
+        w.windowHours,
+      );
+      if (latest) {
+        const t = reqNum(latest.observed_at);
+        if (t > observedAt || (t === observedAt && String(latest.src) >= w.src)) continue;
+        this.run('DELETE FROM source_windows WHERE video_id = ? AND metric = ? AND window_hours = ?', videoId, w.metric, w.windowHours);
+      }
       const r = this.run(
         'INSERT OR IGNORE INTO source_windows (video_id, metric, window_hours, value, observed_at, src) VALUES (?, ?, ?, ?, ?, ?)',
         videoId,
         w.metric,
         w.windowHours,
         w.value,
-        Math.round(w.observedAt),
+        observedAt,
         w.src,
       );
       added += Number(r.changes);
@@ -1053,16 +1112,24 @@ export class Store {
    * Videos whose classification is missing or stale: classifier/sponsorship version changed, the video text
    * changed, or the account seed category changed.
    */
-  listVideosNeedingClassification(classifierVersion: string, sponsorshipVersion: string): (StoredVideo & { accountSeedCategory: string | null })[] {
+  listVideosNeedingClassification(
+    classifierVersion: string,
+    sponsorshipVersion: string,
+  ): (StoredVideo & { accountSeedCategory: string | null; accountName: string | null; accountHandle: string | null })[] {
     return this.all(
-      `SELECT v.*, a.seed_category AS account_seed_category FROM videos v
+      `SELECT v.*, a.seed_category AS account_seed_category, a.name AS account_name, a.handle AS account_handle FROM videos v
        LEFT JOIN video_classification c ON c.video_id = v.id
        LEFT JOIN accounts a ON a.id = v.account_id
        WHERE c.video_id IS NULL OR c.classifier_version IS NOT ? OR c.sponsorship_version IS NOT ?
           OR c.text_hash IS NOT v.text_hash OR c.account_seed IS NOT a.seed_category`,
       classifierVersion,
       sponsorshipVersion,
-    ).map((r) => ({ ...rowToVideo(r), accountSeedCategory: strOrNull(r.account_seed_category) }));
+    ).map((r) => ({
+      ...rowToVideo(r),
+      accountSeedCategory: strOrNull(r.account_seed_category),
+      accountName: strOrNull(r.account_name),
+      accountHandle: strOrNull(r.account_handle),
+    }));
   }
 
   /* ---------------------------------------------------------------- creators */
@@ -1225,6 +1292,77 @@ export class Store {
     );
   }
 
+  /* ---------------------------------------------------------------- one-time data repair */
+
+  /**
+   * Repair text stored by older adapter versions (run once by the v2 migration; idempotent):
+   * - niconico titles/tags and PeerTube titles/tags/descriptions that still hold HTML entities (`&quot;`, `&amp;`,
+   *   which also split topic keys such as `zebra coffee &amp; croissant`) are decoded once;
+   * - PeerTube rows whose uploader-declared ko/ja contradicts a Latin-only text get the detected language (or none);
+   * - YouTube rows labelled 'detected' although the text has no Hangul/Kana carried the RSS seed-language fallback:
+   *   the label is cleared, and the language too when it contradicts the (untruncated) text.
+   * Changed rows get a new text hash, so the next classification pass re-derives their topics.
+   */
+  repairStoredVideos(): RepairStats {
+    const stats: RepairStats = { entities: 0, peertubeLanguage: 0, seedLanguage: 0 };
+    const rows = this.all(
+      "SELECT id, platform, title, description, tags, language, language_source, source_category FROM videos WHERE platform IN ('niconico', 'peertube', 'youtube')",
+    );
+    for (const r of rows) {
+      const platform = String(r.platform);
+      const oldTitle = String(r.title ?? '');
+      const oldDescription = strOrNull(r.description);
+      const oldTags = jsonArray<string>(r.tags);
+      let title = oldTitle;
+      let description = oldDescription;
+      let tags = oldTags;
+      let language = strOrNull(r.language);
+      let languageSource = strOrNull(r.language_source);
+      let changed = false;
+
+      if (platform === 'niconico' || platform === 'peertube') {
+        const t = decodeEntities(oldTitle);
+        const tg = [...new Set(oldTags.map((x) => decodeEntities(x)))];
+        const d = platform === 'peertube' && oldDescription ? decodeEntities(oldDescription) : oldDescription;
+        if (t !== oldTitle || d !== oldDescription || tg.length !== oldTags.length || tg.some((x, i) => x !== oldTags[i])) {
+          title = t;
+          tags = tg;
+          description = d;
+          stats.entities++;
+          changed = true;
+        }
+      }
+      if (platform === 'peertube' && languageSource === 'source' && declaredLanguageConflicts(language, title, description, tags.join(' '))) {
+        const detected = detectLanguage(title, description, tags.join(' '));
+        language = detected;
+        languageSource = detected ? 'detected' : null;
+        stats.peertubeLanguage++;
+        changed = true;
+      }
+      if (platform === 'youtube' && languageSource === 'detected' && !detectLanguage(title, description)) {
+        // Only the RSS seed fallback produced 'detected' without Hangul/Kana. A description cut at 300 characters
+        // may have hidden the script that decided, so the language itself is cleared only for untruncated text.
+        const truncated = !!description && description.endsWith('…');
+        if (!truncated && declaredLanguageConflicts(language, title, description)) language = null;
+        languageSource = null;
+        stats.seedLanguage++;
+        changed = true;
+      }
+      if (!changed) continue;
+      this.run(
+        'UPDATE videos SET title = ?, description = ?, tags = ?, language = ?, language_source = ?, text_hash = ? WHERE id = ?',
+        title,
+        description,
+        JSON.stringify(tags),
+        language,
+        language ? languageSource : null,
+        videoTextHash({ title, description, tags, sourceCategory: strOrNull(r.source_category), language }),
+        String(r.id),
+      );
+    }
+    return stats;
+  }
+
   /* ---------------------------------------------------------------- tiered refresh */
 
   /**
@@ -1236,16 +1374,31 @@ export class Store {
   getRefreshCandidates(source: string, now: number, opts: RefreshCandidateOptions = {}): RefreshCandidate[] {
     const platform = opts.platform ?? platformOfSource(source);
     const tiers = opts.tiers ?? REFRESH_TIERS;
-    const rows = this.all(
-      "SELECT id, platform_id, published_at, last_observed_at, last_views, status FROM videos WHERE platform = ? AND status != 'deleted'",
-      platform,
-    );
+    const rows = opts.onlySource
+      ? this.all(
+          `SELECT id, platform_id, published_at, last_observed_at, last_views, status FROM videos
+           WHERE platform = ? AND status != 'deleted' AND id IN (SELECT video_id FROM video_sources WHERE source = ?)`,
+          platform,
+          opts.onlySource,
+        )
+      : this.all("SELECT id, platform_id, published_at, last_observed_at, last_views, status FROM videos WHERE platform = ? AND status != 'deleted'", platform);
+    // Snapshot sources: rows already holding the newest snapshot are current until a newer one can exist.
+    let currentSnapshot = Number.POSITIVE_INFINITY;
+    if (opts.snapshotIntervalMs && opts.snapshotIntervalMs > 0) {
+      let newest = Number.NEGATIVE_INFINITY;
+      for (const r of rows) {
+        const t = num(r.last_observed_at);
+        if (t !== null && t > newest) newest = t;
+      }
+      if (Number.isFinite(newest) && now - newest < opts.snapshotIntervalMs * REFRESH_INTERVAL_SLACK) currentSnapshot = newest;
+    }
     const due: RefreshCandidate[] = [];
     const oldRows: RefreshCandidate[] = [];
     for (const r of rows) {
       const status = asStatus(r.status);
       const publishedAt = reqNum(r.published_at);
       const lastObservedAt = num(r.last_observed_at);
+      if (lastObservedAt !== null && lastObservedAt >= currentSnapshot) continue;
       const elapsed = lastObservedAt === null ? Number.POSITIVE_INFINITY : now - lastObservedAt;
       const base = { videoId: String(r.id), platformId: String(r.platform_id), publishedAt, lastObservedAt, lastViews: num(r.last_views), status };
       if (status !== 'active') {

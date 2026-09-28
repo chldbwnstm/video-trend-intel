@@ -101,6 +101,27 @@ describe('/creators', () => {
     expect(text(render(S, '/creators?q=zzzz-no-such-creator', '/creators', CreatorsPage))).toContain('조건에 맞는 크리에이터 없음');
   });
 
+  it('does not rank a window before the first observation by view increase', () => {
+    // lastMonth (2026-08) ends before the fixture's first observation (2026-09-28): increases are unknown.
+    const html = render(E, '/creators?range=lastMonth', '/creators', CreatorsPage);
+    const t = text(html);
+    expect(t).toContain('선택한 기간은 첫 관측 이전임');
+    expect(t).toContain('2026-08-01 ~ 2026-08-31');
+    expect(t).toContain('기간 업로드(게시일 기준이라 알 수 있음) 순으로 정렬함');
+    expect(t).toContain('크리에이터 목록 (기간 업로드 순)');
+    expect(t).toContain('최근 7일(롤링)로 보기');
+    // A recent window keeps the view-increase ranking and shows no callout.
+    const recent = text(render(E, '/creators?range=rolling7d', '/creators', CreatorsPage));
+    expect(recent).not.toContain('선택한 기간은 첫 관측 이전임');
+    expect(recent).toContain('크리에이터 목록 (기간 조회 증가 순)');
+  });
+
+  it('keeps an explicit follower sort before the first observation', () => {
+    const t = text(render(E, '/creators?range=lastMonth&sort=followers', '/creators', CreatorsPage));
+    expect(t).toContain('선택한 기간은 첫 관측 이전임');
+    expect(t).toContain('크리에이터 목록 (팔로워 순)');
+  });
+
   it('explains missing followers and partial values on early data', () => {
     const html = render(E, '/creators?sort=followers', '/creators', CreatorsPage);
     const t = text(html);
@@ -134,6 +155,48 @@ describe('/creators/:key', () => {
     expect(t).toContain('단일 계정');
     expect(t).not.toContain('플랫폼별 성과');
     expect(t).not.toContain('계산하지 못함');
+  });
+
+  it('links categories, top videos and sponsored videos to this creator in the video search', () => {
+    const c = creators[1];
+    const html = render(S, `/creators/${c.id}?range=rolling7d`, '/creators/:key', CreatorDetailPage);
+    const hrefs = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, '&'));
+    const videos = hrefs.filter((h) => h.startsWith('/videos')).map((h) => new URL(h, 'http://x').searchParams);
+    // 분야 구성: the creator's videos in that category, same period (not all creators).
+    const cats = videos.filter((q) => q.get('cats'));
+    expect(cats.length).toBeGreaterThan(0);
+    for (const q of cats) {
+      expect(q.get('creators')).toBe(c.id);
+      expect(q.get('range')).toBe('rolling7d');
+    }
+    // 상위 영상: the full list and each video's detail drawer.
+    expect(videos.some((q) => q.get('creators') === c.id && q.get('mode') === 'activity' && !q.get('v') && !q.get('cats'))).toBe(true);
+    const drawers = videos.filter((q) => q.get('v'));
+    expect(drawers.length).toBeGreaterThan(0);
+    for (const q of drawers) expect(q.get('creators')).toBe(c.id);
+    expect(text(html)).toContain('영상 탐색에서 보기');
+    expect(text(html)).toContain('성장 곡선·관측 기록');
+  });
+
+  it('scopes a single account detail to its account id', () => {
+    const solo = sample.accounts.find((a) => !a.creatorId && sample.videos.some((v) => v.accountId === a.id))!;
+    const html = render(S, `/creators/${solo.id}`, '/creators/:key', CreatorDetailPage);
+    const hrefs = [...html.matchAll(/href="(\/videos[^"]*)"/g)].map((m) => new URL(m[1].replace(/&amp;/g, '&'), 'http://x').searchParams);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const q of hrefs) {
+      expect(q.get('accounts')).toBe(solo.id);
+      expect(q.get('creators')).toBeNull();
+    }
+  });
+
+  it('explains a window before the first observation and shows uploads in it', () => {
+    const t = text(render(E, '/creators/maker?range=lastMonth', '/creators/:key', CreatorDetailPage));
+    expect(t).toContain('선택한 기간은 첫 관측 이전임');
+    expect(t).toContain('최근 30일(롤링)로 보기');
+    // Top videos default to the upload-date view (period increases are unknown).
+    expect(t).toContain('업로드 기간 기준: 기간 안에 게시된 영상');
+    expect(t).not.toContain('계산하지 못함');
+    expect(text(render(E, '/creators/maker?range=rolling7d', '/creators/:key', CreatorDetailPage))).not.toContain('선택한 기간은 첫 관측 이전임');
   });
 
   it('shows a not-found state with the requested key', () => {
@@ -187,6 +250,27 @@ describe('/compare', () => {
     const t = text(render(S, `/compare?keys=${keys.join(',')}&platforms=youtube`, '/compare', ComparePage));
     expect(t).not.toContain('여러 플랫폼 수치가 섞인 비교임');
     expect(t).toContain('YouTube 계정·영상만 비교');
+  });
+
+  it('numbers compare slots and keeps their colors apart from the platform colors', () => {
+    const keys = creators.slice(0, 3).map((c) => c.id);
+    const html = render(S, `/compare?keys=${keys.join(',')}`, '/compare', ComparePage);
+    // Sample platforms use --series-1..4 (YouTube, Dailymotion, PeerTube, niconico); slots take other series.
+    const slotColors = [...html.matchAll(/border-color:(var\(--series-\d\))/g)].map((m) => m[1]);
+    expect(slotColors.length).toBeGreaterThanOrEqual(3);
+    for (const c of slotColors) expect(['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)']).not.toContain(c);
+  });
+
+  it('does not crown leaders of unknown increases before the first observation', () => {
+    const html = render(E, '/compare?keys=maker,youtube:UCb&range=lastMonth', '/compare', ComparePage);
+    const t = text(html);
+    expect(t).toContain('선택한 기간은 첫 관측 이전임');
+    // Only the follower row (known now, independent of the window) can still have a leader badge.
+    const badges = [...html.matchAll(/>최고(\(잠정\))?<\/span>/g)];
+    expect(badges.length).toBeLessThanOrEqual(1);
+    expect(t).not.toContain('계산하지 못함');
+    // The same pair over a recent window does get a view-increase leader.
+    expect([...render(E, '/compare?keys=maker,youtube:UCb&range=rolling30d', '/compare', ComparePage).matchAll(/>최고(\(잠정\))?<\/span>/g)].length).toBeGreaterThan(1);
   });
 
   it('marks provisional leaders on early data', () => {

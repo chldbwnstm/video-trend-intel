@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { cx } from '../lib/cx.ts';
-import { formatRelative } from '../lib/format.ts';
+import { formatAgo } from '../lib/format.ts';
 import { Badge } from './primitives.tsx';
 import type { Tone } from './primitives.tsx';
 import { InfoTip } from './Tooltip.tsx';
@@ -18,10 +18,14 @@ export interface PageHeaderProps {
   className?: string;
 }
 
+/**
+ * Page title block. Actions sit beside the title from `sm` up; on phones the text block takes the full width
+ * and the actions wrap onto their own row below the description (instead of squeezing it into a column).
+ */
 export function PageHeader({ title, description, actions, eyebrow, className }: PageHeaderProps) {
   return (
     <header className={cx('flex flex-wrap items-end justify-between gap-3', className)}>
-      <div className="min-w-0 flex-1">
+      <div className="w-full min-w-0 sm:w-auto sm:flex-1">
         {eyebrow ? <p className="mb-0.5 text-xs font-medium text-fg-3">{eyebrow}</p> : null}
         <h1 className="text-xl font-bold tracking-tight text-fg sm:text-2xl">{title}</h1>
         {description ? <p className="mt-1 max-w-3xl text-[13px] text-fg-3 sm:text-sm">{description}</p> : null}
@@ -109,10 +113,10 @@ export function FreshnessBadge({ generatedAt, clock, isSample, className }: { ge
   const level = freshnessLevel(generatedAt, clock, isSample);
   const f = FRESHNESS[level];
   return (
-    <Badge tone={f.tone} className={className} title={`${f.hint} 생성: ${formatRelative(generatedAt, clock)}`}>
+    <Badge tone={f.tone} className={className} title={`${f.hint} 생성: ${formatAgo(generatedAt, clock)}`}>
       <span className="sr-only">데이터 신선도: </span>
       {f.label}
-      {level !== 'sample' ? <span className="font-normal opacity-80">· {formatRelative(generatedAt, clock)}</span> : null}
+      {level !== 'sample' ? <span className="font-normal opacity-80">· {formatAgo(generatedAt, clock)}</span> : null}
     </Badge>
   );
 }

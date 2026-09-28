@@ -1,7 +1,7 @@
 /**
  * Collector CLI (run with tsx). OWNER: collector-pipeline.
  *
- *   collect [--sources a,b] [--max-requests N] [--db data/store.sqlite] [--seeds dir] [--no-classify]
+ *   collect [--sources a,b] [--max-requests N] [--adapter-timeout-min M] [--db data/store.sqlite] [--seeds dir] [--no-classify]
  *   export  [--out data/export] [--copy-to-web] [--db ...] [--budget-mb 40] [--tz Asia/Seoul]
  *   run     [collect options] [--out ...] [--no-copy-to-web]      collect, then export (+ copy to the web app)
  *   stats   [--db ...] [--json]
@@ -57,9 +57,9 @@ const GLOBAL_VALUES = ['log-file'];
 const GLOBAL_BOOLEANS = ['help', 'no-log-file'];
 
 const COMMANDS: Record<CommandName, CommandSpec> = {
-  collect: { values: ['sources', 'max-requests', 'db', 'seeds'], booleans: ['no-classify'], positionals: 0 },
+  collect: { values: ['sources', 'max-requests', 'adapter-timeout-min', 'db', 'seeds'], booleans: ['no-classify'], positionals: 0 },
   export: { values: ['out', 'db', 'budget-mb', 'tz', 'seeds'], booleans: ['copy-to-web'], positionals: 0 },
-  run: { values: ['sources', 'max-requests', 'db', 'seeds', 'out', 'budget-mb', 'tz'], booleans: ['no-copy-to-web', 'no-classify'], positionals: 0 },
+  run: { values: ['sources', 'max-requests', 'adapter-timeout-min', 'db', 'seeds', 'out', 'budget-mb', 'tz'], booleans: ['no-copy-to-web', 'no-classify'], positionals: 0 },
   stats: { values: ['db'], booleans: ['json'], positionals: 0 },
   'add-youtube-channel': { values: ['category', 'country', 'language', 'name', 'creator', 'seeds'], booleans: ['force'], positionals: 1 },
   help: { values: [], booleans: [], positionals: 0 },
@@ -156,6 +156,8 @@ export interface CollectOptions {
   db: string;
   sources: string[] | undefined;
   maxRequests: number | undefined;
+  /** Per-adapter time limit in ms (--adapter-timeout-min; default: env COLLECT_ADAPTER_TIMEOUT_MIN, else the pipeline default). */
+  adapterTimeoutMs: number | undefined;
   seedsDir: string;
   classify: boolean;
 }
@@ -181,6 +183,10 @@ export function collectOptionsFrom(p: ParsedArgs, root: string = REPO_ROOT): Col
     db: resolvePath(p.values.db ?? DEFAULT_DB_PATH, root),
     sources,
     maxRequests: intValue(p.values, 'max-requests', 0),
+    adapterTimeoutMs: (() => {
+      const min = numberValue(p.values, 'adapter-timeout-min');
+      return min === undefined ? undefined : Math.round(min * 60_000);
+    })(),
     seedsDir: p.values.seeds ? resolvePath(p.values.seeds, root) : DEFAULT_SEEDS_DIR,
     classify: !p.flags.has('no-classify'),
   };
@@ -402,7 +408,7 @@ export async function addYoutubeChannel(
 export const USAGE = `Video Trend Intel collector
 
 Usage:
-  collect [--sources a,b] [--max-requests N] [--db data/store.sqlite] [--seeds dir] [--no-classify]
+  collect [--sources a,b] [--max-requests N] [--adapter-timeout-min M] [--db data/store.sqlite] [--seeds dir] [--no-classify]
   export  [--out data/export] [--copy-to-web] [--db data/store.sqlite] [--budget-mb 40] [--tz Asia/Seoul]
   run     [collect options] [--out data/export] [--no-copy-to-web]
   stats   [--db data/store.sqlite] [--json]
@@ -434,7 +440,7 @@ function formatSummary(res: RunCollectionResult): string {
       `obs ${s.observations}`,
       `gone ${s.gone}`,
       `req ${s.requests}`,
-      `refresh ${s.refresh.requested}/${s.refresh.due}`,
+      `refresh ${s.refresh.observed}/${s.refresh.due} (sent ${s.refresh.requested})`,
       `errors ${s.errors.length}`,
     ];
     const first = s.errors[0] ? `\n    ! ${s.errors[0].slice(0, 300)}` : '';
@@ -448,13 +454,16 @@ async function doCollect(p: ParsedArgs, deps: Required<Pick<CliDeps, 'env' | 'no
   const o = collectOptionsFrom(p, deps.root);
   const store = openStore(o.db);
   try {
-    log.info(`collect: db ${o.db}${o.sources ? `, sources ${o.sources.join(',')}` : ''}${o.maxRequests !== undefined ? `, max-requests ${o.maxRequests}` : ''}`);
+    log.info(
+      `collect: db ${o.db}${o.sources ? `, sources ${o.sources.join(',')}` : ''}${o.maxRequests !== undefined ? `, max-requests ${o.maxRequests}` : ''}${o.adapterTimeoutMs !== undefined ? `, adapter timeout ${o.adapterTimeoutMs / 60_000} min` : ''}`,
+    );
     const res = await runCollection({
       db: store,
       sources: o.sources,
       env: deps.env,
       now: deps.now,
       maxRequestsPerSource: o.maxRequests,
+      adapterTimeoutMs: o.adapterTimeoutMs,
       log,
       seedsDir: o.seedsDir,
       classify: o.classify,

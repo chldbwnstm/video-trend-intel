@@ -47,6 +47,7 @@ import { dirCodec, enumCodec, hrefWith, intCodec, platformListCodec } from '../l
 import { cx } from '../lib/cx.ts';
 import {
   BRAND_DATE_MODES,
+  BRAND_PERIOD_LABELS,
   BRAND_SORTS,
   brandCsvRows,
   buildBrandReport,
@@ -75,11 +76,6 @@ const LEVEL_OPTIONS: { value: SponsorLevelFilter; label: string; title: string }
   { value: 'likely', label: '협찬 추정', title: LEVEL_DESCRIPTIONS.likely },
 ];
 
-const PERIOD_LABEL: Record<BrandDateMode, string> = {
-  upload: '게시 후 조회',
-  activity: '기간 조회 증가',
-};
-
 export default function BrandsPage() {
   const { dataset, now, tz } = useDataset();
   const { spec, range, rollingHours, setSpec } = useRangeParam('range', 'rolling30d', { resets: ['page'] });
@@ -106,7 +102,7 @@ export default function BrandsPage() {
     [mode, range, rollingHours, tz, now, platforms, cats, level, q],
   );
   const report = useAnalysis('brands.report', input, (index, i) => buildBrandReport(index, i));
-  const periodLabel = PERIOD_LABEL[mode];
+  const periodLabel = BRAND_PERIOD_LABELS[mode];
 
   const openBrand = useCallback((name: string) => setBrand(name), [setBrand]);
   const closeBrand = useCallback(() => setBrand(''), [setBrand]);

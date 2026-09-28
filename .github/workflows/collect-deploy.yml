@@ -8,7 +8,14 @@
 # Triggers
 #   schedule            collect + deploy (odd minute to avoid the top-of-hour rush)
 #   workflow_dispatch   collect + deploy (inputs: skip collection, restrict sources, guard overrides)
-#   push to main        rebuild the site from the stored data only; collects only when no store exists yet
+#   push to main        rebuild the site from the stored data only; collects when no store exists yet, or when the
+#                       last collection is older than STALE_COLLECT_MIN (a queued scheduled run may have been
+#                       replaced by this one: the concurrency group keeps only one pending run)
+#
+# Token scope: the workflow token is read-only by default. The build job gets contents:write (release asset) and
+# actions:write (schedule keep-alive), and GH_TOKEN is exposed only to the steps that call `gh`; npm ci, the
+# collector and the build never see it, and checkout does not persist it in .git/config. Only the deploy job can
+# write Pages (pages:write + id-token:write).
 #
 # Credentialed sources run only when their repository secrets are set (absent secret = adapter disabled).
 # Optional tuning comes from repository variables (Settings > Secrets and variables > Actions > Variables).
@@ -20,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       collect:
-        description: '수집 실행 (끄면 저장된 데이터로 사이트만 다시 빌드)'
+        description: '수집 실행 (끄면 저장된 데이터로 사이트만 다시 빌드. 단, 마지막 수집이 150분 넘게 지났으면 밀린 예약 수집 대신 수집함)'
         type: boolean
         default: true
       sources:
@@ -46,11 +53,9 @@ on:
       - 'package-lock.json'
       - '.github/workflows/collect-deploy.yml'
 
+# Least privilege by default; each job widens only what it needs.
 permissions:
-  contents: write # data-store release (SQLite store asset)
-  pages: write # GitHub Pages deployment
-  id-token: write # OIDC token for actions/deploy-pages
-  actions: write # keep the scheduled workflow enabled
+  contents: read
 
 # One run at a time: runs share the release asset. Never cancel a run that is uploading the store.
 concurrency:
@@ -64,20 +69,25 @@ defaults:
 env:
   STORE_TAG: data-store
   STORE_DB: data/store.sqlite
+  # A push / collect=false dispatch still collects when the last collection is older than this (minutes).
+  STALE_COLLECT_MIN: '150'
 
 jobs:
   build:
     name: Collect and build
-    runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # Pinned: the pipeline depends on gh, gzip and node:sqlite on the image (ubuntu-latest moves to 26.04).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write # data-store release (SQLite store asset)
+      actions: write # keep the scheduled workflow enabled
     outputs:
       collect_outcome: ${{ steps.collect.outcome }}
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       # node:sqlite (collector store) needs Node >= 22.13; '22' resolves to the latest 22.x.
       - name: Set up Node.js
@@ -92,6 +102,8 @@ jobs:
       - name: Restore SQLite store (release data-store)
         id: restore
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           STORE_ALLOW_EMPTY: ${{ inputs.allow_empty && '1' || '0' }}
         run: bash deploy/ci/store-release.sh restore
 
@@ -100,27 +112,43 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           RESTORED: ${{ steps.restore.outputs.restored }}
+          LAST_RUN_AT: ${{ steps.restore.outputs.last_run_at }}
           INPUT_COLLECT: ${{ inputs.collect }}
         run: |
           collect=true
+          reason="$EVENT"
           if [ "$RESTORED" = "true" ]; then
-            if [ "$EVENT" = "push" ]; then collect=false; fi
-            if [ "$EVENT" = "workflow_dispatch" ] && [ "$INPUT_COLLECT" = "false" ]; then collect=false; fi
+            skip=false
+            if [ "$EVENT" = "push" ]; then skip=true; fi
+            if [ "$EVENT" = "workflow_dispatch" ] && [ "$INPUT_COLLECT" = "false" ]; then skip=true; fi
+            if [ "$skip" = "true" ]; then
+              now_ms=$(( $(date +%s) * 1000 ))
+              if [[ "$LAST_RUN_AT" =~ ^[0-9]+$ ]] && [ $(( now_ms - LAST_RUN_AT )) -lt $(( STALE_COLLECT_MIN * 60000 )) ]; then
+                collect=false
+                reason="$EVENT: last collection $(( (now_ms - LAST_RUN_AT) / 60000 )) min ago"
+              else
+                reason="$EVENT: last collection older than $STALE_COLLECT_MIN min (${LAST_RUN_AT:-none}); collecting in place of a possibly replaced scheduled run"
+              fi
+            fi
           fi
           echo "collect=$collect" >>"$GITHUB_OUTPUT"
-          echo "event=$EVENT restored=$RESTORED -> collect=$collect"
+          echo "event=$EVENT restored=$RESTORED -> collect=$collect ($reason)"
+          echo "- Plan: collect=$collect ($reason)" >>"$GITHUB_STEP_SUMMARY"
 
       - name: Collect
         id: collect
         if: steps.plan.outputs.collect == 'true'
         # A total collection failure still records the failed runs (shown on /coverage): keep going, save the
-        # store, deploy, and fail the workflow at the end.
+        # store, deploy, and fail the workflow at the end. Each adapter is limited to COLLECT_ADAPTER_TIMEOUT_MIN
+        # (default 18) so the four keyless sources fit in this step's limit and a hanging source only loses itself.
         continue-on-error: true
-        timeout-minutes: 45
+        timeout-minutes: 55
         env:
           INPUT_SOURCES: ${{ inputs.sources }}
           COLLECT_SOURCES: ${{ vars.COLLECT_SOURCES }}
           COLLECT_MAX_REQUESTS: ${{ vars.COLLECT_MAX_REQUESTS }}
+          COLLECT_ADAPTER_TIMEOUT_MIN: ${{ vars.COLLECT_ADAPTER_TIMEOUT_MIN || '18' }}
+          DAILYMOTION_GLOBAL_LOCALIZATION: ${{ vars.DAILYMOTION_GLOBAL_LOCALIZATION }}
           # Credentials (repository secrets). Empty = adapter disabled.
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
@@ -164,6 +192,8 @@ jobs:
         id: save
         if: steps.collect.outcome == 'success' || steps.collect.outcome == 'failure'
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           STORE_ALLOW_SHRINK: ${{ inputs.allow_shrink && '1' || '0' }}
         run: bash deploy/ci/store-release.sh save
 
@@ -208,18 +238,15 @@ jobs:
 
       - name: Upload collector logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: collector-logs-${{ github.run_id }}
           path: data/logs/
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: apps/web/dist
 
@@ -227,20 +254,29 @@ jobs:
       - name: Keep the schedule enabled
         if: github.event_name == 'schedule'
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: gh api -X PUT "repos/$GH_REPO/actions/workflows/collect-deploy.yml/enable" --silent
 
   deploy:
     name: Deploy to GitHub Pages
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      pages: write # GitHub Pages deployment
+      id-token: write # OIDC token for actions/deploy-pages
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: Report collection failure
         if: needs.build.outputs.collect_outcome == 'failure'

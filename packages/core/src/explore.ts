@@ -6,6 +6,7 @@ import { PLATFORMS } from './types.ts';
 import type { DatasetIndex } from './dataset.ts';
 import { resolveAnalysisWindow } from './time.ts';
 import { cumulativeAsOf } from './metrics.ts';
+import { isGenericTopic, isSelfTopic } from './taxonomy.ts';
 import { compareIds, compileVideoFilter, indexAsOf, medianOf, percentileRanks, resolveNow } from './query.ts';
 
 export interface ExploreOptions {
@@ -19,6 +20,13 @@ export interface ExploreOptions {
   languages?: string[];
   /** Min videos per topic. Default 3. */
   minSupply?: number;
+  /**
+   * Min distinct uploading accounts among a topic's videos with a views value. Default min(3, minSupply): a
+   * "topic" used by one or two channels is their own label (series hashtag, show name), and its demand is just
+   * those channels' typical views, not an opportunity for anyone else. (It never exceeds the video minimum: with
+   * minSupply 1 or 2 every video may come from a different channel at most.)
+   */
+  minAccounts?: number;
   limit?: number;
 }
 
@@ -26,6 +34,8 @@ export interface ExploreOptions {
 export const EXPLORE_DEFAULT_LIMIT = 50;
 /** Default minimum videos per topic. */
 export const EXPLORE_DEFAULT_MIN_SUPPLY = 3;
+/** Default minimum distinct accounts per topic (see ExploreOptions.minAccounts). */
+export const EXPLORE_DEFAULT_MIN_ACCOUNTS = 3;
 /** Sample videos kept per topic. */
 export const EXPLORE_SAMPLE_VIDEOS = 5;
 
@@ -84,7 +94,13 @@ export function resolveExplorePlatform(index: DatasetIndex, opts: ExploreOptions
  * Details
  * - "Latest views" = cumulativeAsOf(views, now): the value at `now`, or the latest earlier observation (a lower
  *   bound). Videos whose source does not provide views count toward supply but not demand.
- * - A topic is listed when it has at least `minSupply` (default 3) videos with a views value.
+ * - Topics: each video's topics minus generic tags (taxonomy isGenericTopic) and its channel's own name / handle
+ *   used as a tag (isSelfTopic).
+ * - A topic is listed when it has at least `minSupply` (default 3) videos with a views value, from at least
+ *   `minAccounts` (default min(3, minSupply)) distinct accounts.
+ * - Topics with exactly the same videos (one channel's tag pair such as '#너덜트' + '#코믹숏무비') are one
+ *   opportunity: the most widely used tag in the window (then the shortest, then id order) is kept and the
+ *   others are listed in `aliases`. Percentiles are computed after merging.
  * - demandPercentile / supplyPercentile: mid-rank percentiles (0..100) among the listed topics;
  *   score = demandPercentile - supplyPercentile (high = many views per video, few uploads).
  * - Sorted by score desc, then demand desc, supply asc, topic asc; cut to `limit` (default 50).
@@ -98,30 +114,59 @@ export function computeOpportunities(index: DatasetIndex, opts: ExploreOptions):
   const minSupply = Number.isFinite(opts.minSupply) ? Math.max(1, Math.floor(opts.minSupply as number)) : EXPLORE_DEFAULT_MIN_SUPPLY;
   const limit = Number.isFinite(opts.limit) ? Math.max(0, Math.floor(opts.limit as number)) : EXPLORE_DEFAULT_LIMIT;
 
-  const byTopic = new Map<string, { supply: number; views: { id: string; value: number }[] }>();
+  const minAccounts = Number.isFinite(opts.minAccounts)
+    ? Math.max(1, Math.floor(opts.minAccounts as number))
+    : Math.min(EXPLORE_DEFAULT_MIN_ACCOUNTS, minSupply);
+
+  // How widely each tag is used in the window (all platforms): picks the representative of merged topics.
+  const usage = new Map<string, number>();
+  const topicsOf = (v: Video): string[] => {
+    const account = c.index.accountsById.get(v.accountId);
+    return [...new Set(v.topics ?? [])].filter((t) => !isGenericTopic(t) && !isSelfTopic(t, account));
+  };
+  for (const v of c.videos) for (const t of topicsOf(v)) usage.set(t, (usage.get(t) ?? 0) + 1);
+
+  const byTopic = new Map<string, { supply: number; ids: string[]; views: { id: string; value: number }[]; accounts: Set<string> }>();
   for (const v of c.videos) {
     if (v.platform !== platform) continue;
-    const topics = [...new Set(v.topics ?? [])];
+    const topics = topicsOf(v);
     if (!topics.length) continue;
     const m = cumulativeAsOf(v, 'views', c.now);
     const value = m.status !== 'unavailable' && typeof m.value === 'number' && Number.isFinite(m.value) ? m.value : null;
     for (const t of topics) {
       let e = byTopic.get(t);
       if (!e) {
-        e = { supply: 0, views: [] };
+        e = { supply: 0, ids: [], views: [], accounts: new Set() };
         byTopic.set(t, e);
       }
       e.supply++;
-      if (value !== null) e.views.push({ id: v.id, value });
+      e.ids.push(v.id);
+      if (value !== null) {
+        e.views.push({ id: v.id, value });
+        e.accounts.add(v.accountId);
+      }
     }
   }
 
-  const eligible: { topic: string; demand: number; supply: number; sample: string[] }[] = [];
+  // Eligible topics, grouped by their exact video set (identical sets are one opportunity).
+  const groups = new Map<string, string[]>();
   for (const [topic, e] of byTopic) {
-    if (e.views.length < minSupply) continue;
+    if (e.views.length < minSupply || e.accounts.size < minAccounts) continue;
+    const key = [...e.ids].sort(compareIds).join('\n');
+    const g = groups.get(key);
+    if (g) g.push(topic);
+    else groups.set(key, [topic]);
+  }
+  const preference = (a: string, b: string) => (usage.get(b) ?? 0) - (usage.get(a) ?? 0) || a.length - b.length || compareIds(a, b);
+
+  const eligible: { topic: string; aliases: string[]; demand: number; supply: number; sample: string[] }[] = [];
+  for (const members of groups.values()) {
+    members.sort(preference);
+    const e = byTopic.get(members[0])!;
     e.views.sort((a, b) => b.value - a.value || compareIds(a.id, b.id));
     eligible.push({
-      topic,
+      topic: members[0],
+      aliases: members.slice(1),
       demand: medianOf(e.views.map((x) => x.value)) as number,
       supply: e.supply,
       sample: e.views.slice(0, EXPLORE_SAMPLE_VIDEOS).map((x) => x.id),
@@ -132,6 +177,7 @@ export function computeOpportunities(index: DatasetIndex, opts: ExploreOptions):
   const items: OpportunityItem[] = eligible.map((x, i) => ({
     topic: x.topic,
     label: x.topic,
+    aliases: x.aliases,
     demand: x.demand,
     supply: x.supply,
     demandPercentile: demandPct[i],

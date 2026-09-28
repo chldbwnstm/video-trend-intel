@@ -129,6 +129,15 @@ export function formatRelative(ms: number | null | undefined, now: number): stri
   return `${body} ${future ? '후' : '전'}`;
 }
 
+/**
+ * Past-only relative time for freshness ("last success N분 전"): an instant after `now` (clock skew, a run
+ * that finished after the data's now) reads `방금`, never `N분 후`.
+ */
+export function formatAgo(ms: number | null | undefined, now: number): string {
+  if (!isNum(ms)) return DASH;
+  return formatRelative(Math.min(ms, now), now);
+}
+
 /** Hours between two instants, 1 decimal: used by freshness badges. */
 export function hoursBetween(a: number, b: number): number {
   return Math.round(((b - a) / 3_600_000) * 10) / 10;

@@ -700,8 +700,18 @@ export function buildOpenApi(): Json {
             time: { type: 'string', format: 'date-time' },
             uptimeSec: { type: 'integer' },
             dataset: nullable({ type: 'object' }),
-            loader: { type: 'object' },
-            scheduler: { type: 'object' },
+            loader: {
+              type: 'object',
+              description:
+                '데이터셋 로더 상태: file(파일 이름만), fromExport, loadedAt, generatedAt, bytes, loads, failures, lastError, lastErrorAt, watching. ' +
+                '서버 경로·원본 오류 문구는 공개하지 않으며(lastError는 일반 안내 문구), 서버를 HEALTH_VERBOSE=1로 실행한 경우에만 path·exportDir·원본 lastError가 붙습니다.',
+            },
+            scheduler: {
+              type: 'object',
+              description:
+                '수집 스케줄러 상태: enabled, intervalMin, running, nextRunAt, runs, failures, lastRun { startedAt, finishedAt, ok, message, error }. ' +
+                'lastRun.error는 일반 안내 문구이며, 원본 오류와 details는 HEALTH_VERBOSE=1일 때만 포함됩니다.',
+            },
           },
         },
       },

@@ -18,6 +18,7 @@ import type {
 } from '@vti/core';
 import { cached, stableStringify } from '../../lib/cache.ts';
 import { sourceFreshness } from '../../lib/dashboard.ts';
+import { formatInteger, formatRelative } from '../../lib/format.ts';
 import type { FreshnessRow } from '../../lib/dashboard.ts';
 import { orderPlatforms } from '../../lib/platform.ts';
 
@@ -94,11 +95,24 @@ export interface SourceRow extends FreshnessRow {
   coverage: SourceCoverage;
   env: string[];
   missingMetrics: MetricKey[];
+  /** The run behind `lastSuccessAt` (a run start time), when the dataset lists it. */
+  lastSuccessRun: CollectionRun | null;
 }
 
 const ALL_METRICS: MetricKey[] = ['views', 'likes', 'comments', 'shares'];
 
-export function sourceRows(coverage: SourceCoverage[], now: number): SourceRow[] {
+/** Latest successful (ok / partial) run of `source` that started at `startedAt`. */
+function runStartedAt(runs: readonly CollectionRun[], source: string, startedAt: number | null): CollectionRun | null {
+  if (startedAt === null) return null;
+  let hit: CollectionRun | null = null;
+  for (const r of runs) {
+    if (r.source !== source || r.startedAt !== startedAt || r.status === 'error') continue;
+    if (!hit || (r.finishedAt ?? 0) > (hit.finishedAt ?? 0)) hit = r;
+  }
+  return hit;
+}
+
+export function sourceRows(coverage: SourceCoverage[], now: number, runs: readonly CollectionRun[] = []): SourceRow[] {
   const byId = new Map(coverage.map((c) => [c.source, c] as const));
   return sourceFreshness(coverage, now).map((f) => {
     const c = byId.get(f.source)!;
@@ -107,8 +121,39 @@ export function sourceRows(coverage: SourceCoverage[], now: number): SourceRow[]
       coverage: c,
       env: credentialEnvVars(c),
       missingMetrics: ALL_METRICS.filter((m) => !(c.metrics ?? []).includes(m)),
+      lastSuccessRun: runStartedAt(runs, c.source, c.lastSuccessAt),
     };
   });
+}
+
+export interface DataNowLabel {
+  /** `3시간 전`, or `기준 시각 이후 실행` for a time after the data now. */
+  text: string;
+  /** `새 관측 없음` when the run after the data now recorded 0 observations, else null. */
+  note: string | null;
+  afterNow: boolean;
+  /** Explanation for times after the data now (tooltip), else null. */
+  hint: string | null;
+}
+
+/**
+ * A collection time relative to the data now (the dataset's 기준 시각). The data now is the newest observation,
+ * so a run can start or finish after it when it added nothing newer (e.g. a refresh that found no new
+ * observation, or a source whose observation time is its snapshot time). Such a time is labeled
+ * '기준 시각 이후 실행', never a future "N분 후". With the run known, `새 관측 없음` is stated only when the run
+ * really recorded 0 observations.
+ */
+export function relativeToDataNow(t: number, now: number, run: Pick<CollectionRun, 'observations'> | null = null): DataNowLabel {
+  if (t <= now) return { text: formatRelative(t, now), note: null, afterNow: false, hint: null };
+  const none = run !== null && run.observations === 0;
+  return {
+    text: '기준 시각 이후 실행',
+    note: none ? '새 관측 없음' : null,
+    afterNow: true,
+    hint:
+      '데이터 기준 시각은 가장 새 관측 시각임. 이 실행은 그 뒤에 시작돼 기준 시각보다 새로운 관측을 더하지 않음' +
+      (run ? ` (이 실행의 관측 ${formatInteger(run.observations)}건).` : '.'),
+  };
 }
 
 export interface CoverageSummary {
@@ -318,7 +363,8 @@ export function runSummary(runs: CollectionRun[], now: number): RunSummary {
   let problems24h = 0;
   for (const r of runs) {
     if (r.status !== 'ok') problems++;
-    if (r.startedAt > now - 24 * HOUR_MS && r.startedAt <= now) {
+    // Runs that started after the data now (they added nothing newer, see relativeToDataNow) still count.
+    if (r.startedAt > now - 24 * HOUR_MS) {
       last24h++;
       if (r.status !== 'ok') problems24h++;
     }

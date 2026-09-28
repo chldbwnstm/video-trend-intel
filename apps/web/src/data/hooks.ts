@@ -2,15 +2,29 @@
  * React hooks for pages: dataset access, URL query-string state, global filters, deferred analytics.
  * See UI_GUIDE.md for usage patterns.
  */
-import { useCallback, useContext, useDeferredValue, useMemo, useRef } from 'react';
+import { useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { DatasetIndex, RangePreset } from '@vti/core';
-import { DatasetContext } from './context.ts';
-import type { DatasetContextValue } from './context.ts';
-import { applyParamPatch, inferCodec, nextSearchFor, readParam, resolveRangeSpec, searchFromHash, URL_KEYS } from '../lib/urlState.ts';
-import type { ParamPatch, ResolvedRange, UrlCodec } from '../lib/urlState.ts';
+import { AppStatusContext, DatasetContext } from './context.ts';
+import type { AppStatusValue, DatasetContextValue } from './context.ts';
+import {
+  applyParamPatch,
+  historyModeFor,
+  historyStep,
+  inferCodec,
+  nextSearchFor,
+  readParam,
+  resolveRangeSpec,
+  searchFromHash,
+  serializeParam,
+  TZ_PARAM,
+  tzParamFor,
+  URL_KEYS,
+} from '../lib/urlState.ts';
+import type { HistoryMode, ParamPatch, ResolvedRange, UrlCodec } from '../lib/urlState.ts';
 import { cached, stableStringify } from '../lib/cache.ts';
-import { TZ_OPTIONS } from '../lib/timezones.ts';
+import { readStored, STORAGE_KEYS, writeStored } from '../lib/storage.ts';
+import { DEFAULT_DISPLAY_TZ, normalizeTz, TZ_OPTIONS } from '../lib/timezones.ts';
 import type { TzOption } from '../lib/timezones.ts';
 
 /* ------------------------------------------------------------------------------------------ dataset */
@@ -27,9 +41,16 @@ export function useOptionalDataset(): DatasetContextValue | null {
   return useContext(DatasetContext);
 }
 
-/** Display tz; defaults to Asia/Seoul outside the provider. */
+/** Display tz; also available while the dataset loads; defaults to Asia/Seoul outside the provider. */
 export function useTz(): string {
-  return useContext(DatasetContext)?.tz ?? 'Asia/Seoul';
+  const ds = useContext(DatasetContext);
+  const app = useContext(AppStatusContext);
+  return ds?.tz ?? app?.tz ?? DEFAULT_DISPLAY_TZ;
+}
+
+/** Loading status + time zone for the shell (null outside <DatasetProvider>). */
+export function useAppStatus(): AppStatusValue | null {
+  return useContext(AppStatusContext);
 }
 
 export interface GlobalFilters {
@@ -42,7 +63,10 @@ export interface GlobalFilters {
   isSample: boolean;
 }
 
-/** Global (app-wide) filters. The time zone is persisted in localStorage per viewer. */
+/**
+ * Global (app-wide) filters. The time zone is part of the URL (`tz`, written when it differs from the
+ * default) so shared links resolve the same windows; the viewer's choice is also remembered in localStorage.
+ */
 export function useGlobalFilters(): GlobalFilters {
   const { tz, setTz, now, isSample } = useDataset();
   return { tz, setTz, tzOptions: TZ_OPTIONS, now, isSample };
@@ -63,11 +87,25 @@ function liveLocation(fallback: { pathname: string; search: string }): { pathnam
   return fallback;
 }
 
+/** The live router state of the current entry (HashRouter keeps `{ usr, key, idx }` in history.state). */
+function liveHistory(fallbackState: unknown): { state: unknown; canGoBack: boolean } {
+  if (typeof window !== 'undefined' && window.location.hash.startsWith('#/')) {
+    const hs = window.history.state as { usr?: unknown; idx?: number } | null;
+    if (hs && typeof hs === 'object') return { state: hs.usr ?? null, canGoBack: typeof hs.idx === 'number' && hs.idx > 0 };
+  }
+  return { state: fallbackState ?? null, canGoBack: false };
+}
+
 export interface UrlStateOptions<T> {
   /** Custom codec (e.g. enumCodec(['upload','activity','age'])). Inferred from the default otherwise. */
   codec?: UrlCodec<T>;
-  /** Replace the history entry instead of pushing (default true: filters don't flood Back). */
+  /**
+   * `true` replaces the history entry, `false` pushes one. Default: the key's mode in URL_HISTORY
+   * (`page` pushes, `brand` / `node` are selections), else replace (filters don't flood Back).
+   */
   replace?: boolean;
+  /** Explicit history mode (see HistoryMode in lib/urlState.ts), e.g. `'selection'` for a drawer key. */
+  history?: HistoryMode;
   /** Other keys to clear when this one changes (e.g. `['page']`). */
   resets?: string[];
 }
@@ -102,7 +140,17 @@ export function useUrlState<T>(key: string, defaultValue: T, opts: UrlStateOptio
       const resolved = typeof next === 'function' ? (next as (p: T) => T)(prev) : next;
       const search = nextSearchFor(live.search, key, resolved, def, c, o.resets);
       if (search === live.search) return;
-      navigate({ pathname: live.pathname, search }, { replace: o.replace ?? true });
+      const { state, canGoBack } = liveHistory(loc.state);
+      const step = historyStep(
+        historyModeFor(key, o),
+        key,
+        serializeParam(prev, def, c) !== null,
+        serializeParam(resolved, def, c) !== null,
+        state,
+        canGoBack,
+      );
+      if (step.kind === 'back') navigate(-1);
+      else navigate({ pathname: live.pathname, search }, { replace: step.kind === 'replace', state: step.state });
     },
     [key, navigate],
   );
@@ -113,7 +161,8 @@ export function useUrlState<T>(key: string, defaultValue: T, opts: UrlStateOptio
 /**
  * The whole query string plus a batch updater:
  * `const [params, update] = useUrlParams(); update({ q: 'x', page: null })`.
- * `null` / `undefined` / '' / [] remove a key.
+ * `null` / `undefined` / '' / [] remove a key. A batch replaces the entry by default (and drops a selection
+ * marker, so a drawer closed together with a filter change is closed by replacing, not by going back).
  */
 export function useUrlParams(): [URLSearchParams, (patch: ParamPatch, opts?: { replace?: boolean }) => void] {
   const location = useLocation();
@@ -131,6 +180,61 @@ export function useUrlParams(): [URLSearchParams, (patch: ParamPatch, opts?: { r
     [navigate],
   );
   return [params, update];
+}
+
+/**
+ * The display time zone as global URL state (used once, by DatasetProvider):
+ * - a valid `tz` in the URL (a shared link) wins over the stored preference and is adopted for the session
+ *   (links inside the app don't carry it) without overwriting the viewer's stored choice;
+ * - the address bar always carries a zone that differs from the default or from the stored preference, so
+ *   copying it reproduces the same local-date windows (tzParamFor);
+ * - setTz (the top-bar select) stores the choice and rewrites the URL (replace, router state kept).
+ */
+export function useUrlTz(): [string, (tz: string) => void] {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const raw = new URLSearchParams(location.search).get(TZ_PARAM);
+  const fromUrl = raw !== null && normalizeTz(raw) === raw ? raw : null;
+  const [chosen, setChosen] = useState<string>(() => fromUrl ?? normalizeTz(readStored(STORAGE_KEYS.tz)));
+  // The zone the viewer just picked, until the URL reflects it: the router applies location updates in a
+  // transition, so one render can still see the old `tz` in the URL and must not flip back to it.
+  const [pending, setPending] = useState<string | null>(null);
+  const tz = pending ?? fromUrl ?? chosen;
+
+  // Adopt a zone only when the URL's `tz` itself changes (a shared link, Back/Forward), never because a
+  // render briefly sees an older URL.
+  const prevRaw = useRef(raw);
+  useEffect(() => {
+    if (prevRaw.current === raw) return;
+    prevRaw.current = raw;
+    setPending(null);
+    if (fromUrl && fromUrl !== chosen) setChosen(fromUrl);
+  }, [raw, fromUrl, chosen]);
+
+  useEffect(() => {
+    const want = tzParamFor(tz, normalizeTz(readStored(STORAGE_KEYS.tz)), DEFAULT_DISPLAY_TZ);
+    if (raw === want) return;
+    navigate({ pathname: location.pathname, search: applyParamPatch(location.search, { [TZ_PARAM]: want }) }, { replace: true, state: location.state });
+  }, [tz, raw, location, navigate]);
+
+  const locRef = useRef(location);
+  locRef.current = location;
+  const setTz = useCallback(
+    (next: string) => {
+      const n = normalizeTz(next);
+      writeStored(STORAGE_KEYS.tz, n);
+      setChosen(n);
+      const live = liveLocation({ pathname: locRef.current.pathname, search: locRef.current.search });
+      const liveRaw = new URLSearchParams(live.search).get(TZ_PARAM);
+      const target = tzParamFor(n, n, DEFAULT_DISPLAY_TZ);
+      if (liveRaw !== target) setPending(n);
+      const { state } = liveHistory(locRef.current.state);
+      const search = applyParamPatch(live.search, { [TZ_PARAM]: target });
+      if (search !== live.search) navigate({ pathname: live.pathname, search }, { replace: true, state });
+    },
+    [navigate],
+  );
+  return [tz, setTz];
 }
 
 export interface RangeParam extends ResolvedRange {

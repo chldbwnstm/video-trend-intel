@@ -7,13 +7,28 @@
  * `media:starRating@count` (likes). No comments, no duration, no tags.
  *
  * Refresh: RSS cannot look videos up by id, so `ctx.refreshIds` is ignored; a video is observed again only
- * while it is still among its channel's 15 latest uploads (documented in `notes`).
+ * while it is still in one of its channel's feeds (documented in `notes`; the pipeline counts the tracked videos
+ * that were due but did not reappear).
+ *
+ * Fast channels: a 15-entry channel feed of a news or drama channel spans only hours (measured 2026-09-28: under
+ * 24 h for 41 of 391 seed channels, under 7 days for 109), so most of their uploads could never be re-observed.
+ * When the channel feed is full (15 entries) and spans less than FAST_CHANNEL_SPAN_MS, the channel's long-form
+ * and Shorts uploads playlists are read as well (`playlist_id=UULF…` / `UUSH…`, same channel id without the
+ * `UC` prefix; each also lists 15 entries with the same statistics). Entries are merged by video id; playlist
+ * membership sets the format (UUSH = short, UULF = long). The channel feed is always read first, so live and
+ * premiere entries (in neither playlist) are kept. These extra requests run after every channel feed, so a tight
+ * budget never costs a channel its main feed.
+ *
+ * Breaker: after CONSECUTIVE_FAILURE_LIMIT consecutive network errors / 429 / 5xx (YouTube throttling the runner)
+ * the adapter stops and returns what it has, so one throttled source cannot eat the whole collection step.
  */
 import { XMLParser } from 'fast-xml-parser';
+import type { VideoFormat } from '@vti/core';
 import type { CollectContext, CollectResult, RawAccount, RawVideo, SourceAdapter, YoutubeChannelSeed } from '../types.ts';
 import {
   RequestBudget,
   cleanDescription,
+  declaredLanguageConflicts,
   decodeEntities,
   detectLanguage,
   errorMessage,
@@ -31,6 +46,24 @@ const FEED_BASE = 'https://www.youtube.com/feeds/videos.xml';
 export function youtubeFeedUrl(channelId: string): string {
   return `${FEED_BASE}?channel_id=${encodeURIComponent(channelId)}`;
 }
+
+export function youtubePlaylistFeedUrl(playlistId: string): string {
+  return `${FEED_BASE}?playlist_id=${encodeURIComponent(playlistId)}`;
+}
+
+/** Uploads playlists of a channel: `UULF…` long-form, `UUSH…` Shorts (null for a malformed channel id). */
+export function uploadsPlaylists(channelId: string): { long: string; shorts: string } | null {
+  if (!/^UC[A-Za-z0-9_-]{22}$/.test(channelId)) return null;
+  const rest = channelId.slice(2);
+  return { long: `UULF${rest}`, shorts: `UUSH${rest}` };
+}
+
+/** Entries per feed (YouTube's fixed limit). */
+export const FEED_ENTRY_LIMIT = 15;
+/** A full channel feed spanning less than this also gets its long-form and Shorts playlist feeds. */
+export const FAST_CHANNEL_SPAN_MS = 7 * 86_400_000;
+/** Consecutive network errors / 429 / 5xx after which the adapter stops requesting (partial result). */
+export const CONSECUTIVE_FAILURE_LIMIT = 10;
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -145,11 +178,26 @@ export function likesFromStarRating(count: string | null): number | null {
   return n != null && n > 0 ? n : null;
 }
 
+/**
+ * Language of a feed entry: detected from the title/description script (Hangul -> ko, Kana -> ja), else the seed
+ * channel's language as a HINT. The hint is not a detection and not a source declaration, so its languageSource
+ * is null (the Video contract has no "seed" provenance yet); it is dropped when it contradicts the text (a `ko`
+ * channel posting an English-only title, e.g. Arirang News).
+ */
+export function entryLanguage(title: string, description: string | null, seedLanguage: string | null | undefined): { language: string | null; languageSource: 'detected' | null } {
+  const detected = detectLanguage(title, description);
+  if (detected) return { language: detected, languageSource: 'detected' };
+  const hint = normalizeLanguage(seedLanguage);
+  if (!hint || declaredLanguageConflicts(hint, title, description)) return { language: null, languageSource: null };
+  return { language: hint, languageSource: null };
+}
+
 export function entryToRawVideo(
   entry: ParsedEntry,
   seed: YoutubeChannelSeed,
   account: RawAccount,
   now: number,
+  format?: VideoFormat,
 ): RawVideo | null {
   const videoId = entry.videoId;
   const publishedAt = parseTime(entry.published);
@@ -157,8 +205,7 @@ export function entryToRawVideo(
   const url = entry.url ?? `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
   const title = entry.title ?? '';
   const description = cleanDescription(entry.description);
-  const detected = detectLanguage(title, entry.description);
-  const language = detected ?? normalizeLanguage(seed.language);
+  const { language, languageSource } = entryLanguage(title, entry.description, seed.language);
   return {
     platform: 'youtube',
     platformId: videoId,
@@ -168,10 +215,10 @@ export function entryToRawVideo(
     thumbnail: entry.thumbnail,
     publishedAt,
     durationSec: null,
-    format: /\/shorts\//.test(url) ? 'short' : 'long',
+    format: format ?? (/\/shorts\//.test(url) ? 'short' : 'long'),
     account,
     language,
-    languageSource: language ? 'detected' : null,
+    languageSource,
     country: normalizeCountry(seed.country),
     sourceCategory: seed.category ? `youtube:seed:${seed.category}` : null,
     tags: [],
@@ -201,12 +248,18 @@ function accountFor(seed: YoutubeChannelSeed, feed: ParsedFeed | null): RawAccou
   };
 }
 
+function isThrottleOrNetwork(status: number | null): boolean {
+  return status === null || status === 429 || status >= 500;
+}
+
 async function collect(ctx: CollectContext): Promise<CollectResult> {
   const videos: RawVideo[] = [];
+  const byId = new Map<string, RawVideo>();
   const accounts: RawAccount[] = [];
   const errors: string[] = [];
   const budget = new RequestBudget(ctx.http, ctx.maxRequests);
-  const seen = new Set<string>();
+  let consecutiveFailures = 0;
+  let broken = false;
 
   // De-duplicate seeds by channel id (first seed wins: it carries category/country/language).
   const seeds: YoutubeChannelSeed[] = [];
@@ -218,31 +271,46 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
     seeds.push({ ...s, channelId: id });
   }
 
+  const fetchFeed = async (url: string): Promise<{ xml: string } | { status: number | null; error: unknown }> => {
+    try {
+      budget.take();
+      const xml = await ctx.http.getText(url);
+      consecutiveFailures = 0;
+      return { xml };
+    } catch (err) {
+      const status = httpStatusOf(err);
+      if (isThrottleOrNetwork(status)) consecutiveFailures++;
+      else consecutiveFailures = 0;
+      if (consecutiveFailures >= CONSECUTIVE_FAILURE_LIMIT) broken = true;
+      return { status, error: err };
+    }
+  };
+
+  /* ---------------------------------------------------------------- pass 1: channel feeds */
+  const fast: { seed: YoutubeChannelSeed; account: RawAccount }[] = [];
   let fetched = 0;
   for (let i = 0; i < seeds.length; i++) {
     const seed = seeds[i];
-    if (!budget.has()) {
+    if (broken || !budget.has()) {
       const skipped = seeds.length - i;
+      const list = `${seeds
+        .slice(i, i + 5)
+        .map((s) => s.channelId)
+        .join(', ')}${skipped > 5 ? ', …' : ''}`;
       errors.push(
-        `요청 한도(maxRequests=${ctx.maxRequests}) 도달: 시드 채널 ${skipped}개 미수집 (${seeds
-          .slice(i, i + 5)
-          .map((s) => s.channelId)
-          .join(', ')}${skipped > 5 ? ', …' : ''})`,
+        broken
+          ? `연속 ${CONSECUTIVE_FAILURE_LIMIT}회 네트워크 오류·429·5xx(요청 제한 추정)로 수집 중단: 시드 채널 ${skipped}개 미수집 (${list})`
+          : `요청 한도(maxRequests=${ctx.maxRequests}) 도달: 시드 채널 ${skipped}개 미수집 (${list})`,
       );
       break;
     }
-    const url = youtubeFeedUrl(seed.channelId);
-    let xml: string;
-    try {
-      budget.take();
-      xml = await ctx.http.getText(url);
-    } catch (err) {
-      const status = httpStatusOf(err);
-      if (status === 404) errors.push(`채널 ${seed.channelId} (${seed.name}) RSS 없음(HTTP 404): 채널 ID 확인 필요`);
-      else errors.push(`채널 ${seed.channelId} RSS 요청 실패${status ? `(HTTP ${status})` : ''}: ${errorMessage(err)}`);
+    const res = await fetchFeed(youtubeFeedUrl(seed.channelId));
+    if (!('xml' in res)) {
+      if (res.status === 404) errors.push(`채널 ${seed.channelId} (${seed.name}) RSS 없음(HTTP 404): 채널 ID 확인 필요`);
+      else errors.push(`채널 ${seed.channelId} RSS 요청 실패${res.status ? `(HTTP ${res.status})` : ''}: ${errorMessage(res.error)}`);
       continue;
     }
-    const feed = parseYoutubeFeed(xml);
+    const feed = parseYoutubeFeed(res.xml);
     if (!feed) {
       errors.push(`채널 ${seed.channelId} RSS 응답이 Atom 피드가 아님(동의 페이지/오류 페이지일 수 있음)`);
       continue;
@@ -251,23 +319,72 @@ async function collect(ctx: CollectContext): Promise<CollectResult> {
     const account = accountFor(seed, feed);
     let added = 0;
     let bad = 0;
+    let oldest = Number.POSITIVE_INFINITY;
     for (const entry of feed.entries) {
       const v = entryToRawVideo(entry, seed, account, ctx.now);
       if (!v) {
         bad++;
         continue;
       }
-      if (seen.has(v.platformId)) continue;
-      seen.add(v.platformId);
+      oldest = Math.min(oldest, v.publishedAt);
+      if (byId.has(v.platformId)) continue;
+      byId.set(v.platformId, v);
       videos.push(v);
       added++;
     }
     if (bad) errors.push(`채널 ${seed.channelId}: 항목 ${bad}개 파싱 불가(영상 ID/게시일 없음)`);
     if (added === 0) accounts.push(account);
+    if (feed.entries.length >= FEED_ENTRY_LIMIT && ctx.now - oldest < FAST_CHANNEL_SPAN_MS && uploadsPlaylists(seed.channelId)) {
+      fast.push({ seed, account });
+    }
+  }
+
+  /* ---------------------------------------------------------------- pass 2: uploads playlists of fast channels */
+  let playlistFeeds = 0;
+  let playlistAdded = 0;
+  for (let i = 0; i < fast.length && !broken; i++) {
+    const { seed, account } = fast[i];
+    const lists = uploadsPlaylists(seed.channelId)!;
+    for (const [playlistId, format] of [
+      [lists.long, 'long'],
+      [lists.shorts, 'short'],
+    ] as const) {
+      if (broken) break;
+      if (!budget.has()) {
+        errors.push(`요청 한도(maxRequests=${ctx.maxRequests}) 도달: 업로드가 빠른 채널 ${fast.length - i}개의 긴 영상·Shorts 재생목록 피드 미수집`);
+        i = fast.length;
+        break;
+      }
+      const res = await fetchFeed(youtubePlaylistFeedUrl(playlistId));
+      if (!('xml' in res)) {
+        // 404: the channel has no uploads of that kind (e.g. no Shorts) - not an error.
+        if (res.status !== 404) errors.push(`채널 ${seed.channelId} 재생목록 ${playlistId.slice(0, 4)} 피드 요청 실패${res.status ? `(HTTP ${res.status})` : ''}: ${errorMessage(res.error)}`);
+        continue;
+      }
+      const feed = parseYoutubeFeed(res.xml);
+      if (!feed) continue;
+      playlistFeeds++;
+      for (const entry of feed.entries) {
+        if (entry.channelId && entry.channelId !== seed.channelId) continue; // only the channel's own uploads
+        const existing = entry.videoId ? byId.get(entry.videoId) : undefined;
+        if (existing) {
+          existing.format = format; // playlist membership beats the /shorts/ link heuristic
+          continue;
+        }
+        const v = entryToRawVideo(entry, seed, account, ctx.now, format);
+        if (!v) continue;
+        byId.set(v.platformId, v);
+        videos.push(v);
+        playlistAdded++;
+      }
+    }
+  }
+  if (broken && fast.length && playlistFeeds < fast.length * 2) {
+    errors.push(`연속 ${CONSECUTIVE_FAILURE_LIMIT}회 네트워크 오류·429·5xx(요청 제한 추정)로 재생목록 피드 수집 중단`);
   }
 
   ctx.log?.info?.(
-    `[${ID}] channels ${fetched}/${seeds.length}, videos ${videos.length}, requests ${budget.used}, errors ${errors.length}`,
+    `[${ID}] channels ${fetched}/${seeds.length}, fast channels ${fast.length} (playlist feeds ${playlistFeeds}, +${playlistAdded} videos), videos ${videos.length}, requests ${budget.used}, errors ${errors.length}`,
   );
   return { videos, accounts, errors };
 }
@@ -280,15 +397,17 @@ export const youtubeRss: SourceAdapter = {
   envKeys: [],
   metrics: ['views', 'likes'],
   discovery:
-    '시드 채널 목록(seeds/youtube-channels.json)의 공개 RSS 피드(https://www.youtube.com/feeds/videos.xml?channel_id=…)에서 채널별 최신 업로드 15개를 수집합니다. 키워드 검색이나 시장 전체 발견은 하지 않습니다.',
+    '시드 채널 목록(seeds/youtube-channels.json)의 공개 RSS 피드(https://www.youtube.com/feeds/videos.xml?channel_id=…)에서 채널별 최신 업로드 15개를 수집합니다. 업로드가 빨라 15개가 7일도 안 되는 채널은 긴 영상(UULF)·Shorts(UUSH) 재생목록 피드도 함께 읽어 각각 최신 15개를 더 관측합니다. 키워드 검색이나 시장 전체 발견은 하지 않습니다.',
   notes: [
-    '채널별 최신 업로드 15개만 관측됩니다. 16번째 이후로 밀려난 영상은 더 이상 관측되지 않으므로 이후 기간의 증가량은 계산할 수 없습니다(미관측).',
+    '채널별 최신 업로드 15개만 관측됩니다(업로드가 빠른 채널은 긴 영상·Shorts 재생목록에서 각각 15개 더). 모든 피드에서 밀려난 영상은 더 이상 관측되지 않으므로 이후 기간의 증가량·V7/V30은 계산할 수 없습니다(미관측). 실행마다 갱신 주기가 되었는데 피드에 다시 나타나지 않은 추적 영상 수를 기록합니다.',
     '조회수는 RSS의 media:statistics(공개 조회수), 좋아요는 media:starRating count(공개 좋아요 수) 값을 그대로 사용합니다.',
     '좋아요 수가 0으로 표시되면 비공개(숨김)와 실제 0을 구분할 수 없어 미제공(null)으로 처리합니다.',
     '댓글 수·공유 수·영상 길이·태그는 RSS에서 제공되지 않습니다(미제공, 0이 아님).',
     'YouTube Shorts는 2025년 3월부터 재생·반복 재생을 조회수로 집계하도록 정의가 바뀌었습니다. 이전 기간과 비교할 때 주의하세요.',
-    '형식: 영상 링크가 /shorts/ 이면 Shorts(short), 그 외는 long으로 분류합니다. 라이브 여부는 RSS로 구분할 수 없습니다.',
-    '언어는 제목·설명의 문자(한글→ko, 가나→ja)로 추정하고, 판별되지 않으면 시드 채널의 언어를 사용합니다(검출값). 국가는 시드에 적힌 채널(제작자) 국가이며 시청자 지역이 아닙니다.',
+    '형식: Shorts 재생목록(UUSH)에 있으면 short, 긴 영상 재생목록(UULF)에 있으면 long이고, 재생목록을 읽지 않은 채널은 영상 링크가 /shorts/ 이면 short, 그 외 long입니다. 라이브 여부는 RSS로 구분할 수 없습니다.',
+    '언어는 제목·설명의 문자(한글→ko, 가나→ja)로 판별한 값(검출)입니다. 판별되지 않으면 시드 채널의 언어를 참고값으로 쓰되 검출값으로 표시하지 않고(출처 미표기), 제목·설명이 라틴 문자뿐인데 시드 언어가 ko/ja이면 쓰지 않습니다(예: 영어 제목의 한국 채널 영상).',
+    '국가는 시드 목록에 적힌 채널(제작자) 국가로, 원천(YouTube)이 제공한 값이 아니며 시청자 지역도 아닙니다.',
+    '연속 10회 네트워크 오류·429·5xx가 나면(요청 제한 추정) 수집을 멈추고 그때까지 받은 결과만 저장합니다.',
   ],
   docsUrl: 'https://www.youtube.com/t/terms',
   version: 1,

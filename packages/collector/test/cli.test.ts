@@ -82,6 +82,11 @@ describe('option resolution', () => {
     expect(() => collectOptionsFrom(parseArgs(['collect', '--sources', ',']), ROOT)).toThrow(/at least one/);
     expect(() => collectOptionsFrom(parseArgs(['collect', '--max-requests', '-1']), ROOT)).toThrow(/integer/);
     expect(() => collectOptionsFrom(parseArgs(['collect', '--max-requests', '1.5']), ROOT)).toThrow(/integer/);
+    // per-adapter time limit (CI keeps it well below the collect step's own timeout)
+    expect(collectOptionsFrom(parseArgs(['collect', '--adapter-timeout-min', '12']), ROOT).adapterTimeoutMs).toBe(12 * 60_000);
+    expect(collectOptionsFrom(parseArgs(['run', '--adapter-timeout-min=0.5']), ROOT).adapterTimeoutMs).toBe(30_000);
+    expect(d.adapterTimeoutMs).toBeUndefined();
+    expect(() => collectOptionsFrom(parseArgs(['collect', '--adapter-timeout-min', '0']), ROOT)).toThrow(/positive/);
   });
 
   it('export options: copy-to-web default depends on the command; budget; tz', () => {

@@ -94,9 +94,39 @@ describe('buildBrandReport', () => {
 
   it('exports CSV rows with status and empty cells for unavailable sums', () => {
     const rows = brandCsvRows(report, (ms) => String(ms));
-    expect(rows[0]).toContain('상태');
+    const header = rows[0] as string[];
+    // activity mode: the value column says what it sums, like the UI
+    expect(header).toContain('기간 조회 증가 합계');
+    expect(header).toContain('기간 조회 증가 합계 상태');
     expect(rows.length).toBe(report.brands.length + 1);
-    for (const r of rows.slice(1)) if (r[9] === 'unavailable') expect(r[8]).toBeNull();
+    const value = header.indexOf('기간 조회 증가 합계');
+    const status = header.indexOf('기간 조회 증가 합계 상태');
+    for (const r of rows.slice(1)) {
+      expect(r).toHaveLength(header.length);
+      if (r[status] === '계산 불가(unavailable)') expect(r[value]).toBeNull();
+    }
+  });
+
+  it('names the CSV value column after the date mode and writes the period on every row', () => {
+    const upload = buildBrandReport(index, input({ mode: 'upload', range: presetRange('rolling7d', tz, now), rollingHours: 168 }));
+    const rows = brandCsvRows(upload, (ms) => String(ms));
+    const header = rows[0] as string[];
+    expect(header).toContain('게시 후 조회 합계');
+    expect(header).not.toContain('기간 조회 합계');
+    for (const h of ['기간 시작', '기간 끝', '시간대', '기간 상태', '날짜 기준']) expect(header).toContain(h);
+    for (const r of rows.slice(1)) {
+      expect(r[header.indexOf('날짜 기준')]).toBe('업로드 기간');
+      expect(r[header.indexOf('기간 상태')]).toBe('롤링 168시간 (데이터 기준 시각까지)');
+      expect(r[header.indexOf('시간대')]).toBe(tz);
+    }
+    const activity = brandCsvRows(report, (ms) => String(ms));
+    const h2 = activity[0] as string[];
+    // last90d is a local date range: inclusive local dates, finished or running
+    for (const r of activity.slice(1)) {
+      expect(r[h2.indexOf('날짜 기준')]).toBe('조회 발생 기간');
+      expect(String(r[h2.indexOf('기간 시작')])).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(['완료', '진행 중 (부분 집계)']).toContain(r[h2.indexOf('기간 상태')]);
+    }
   });
 });
 

@@ -133,7 +133,9 @@ const STATUS_BADGE: Partial<Record<Video['status'], string>> = {
 export function VideoTitleLink({ video, lines = 2, className, icon = false }: VideoTitleLinkProps) {
   const href = safeHttpUrl(video.url);
   const title = video.title || '(제목 없음)';
-  const clamp = lines === 1 ? 'line-clamp-1' : lines === 3 ? 'line-clamp-3' : 'line-clamp-2';
+  // Titles may break anywhere (long CJK runs under keep-all, pasted URLs): inside tables they must not set
+  // the column's minimum width (tables themselves use overflow-wrap: break-word, see index.css).
+  const clamp = cx(lines === 1 ? 'line-clamp-1' : lines === 3 ? 'line-clamp-3' : 'line-clamp-2', '[overflow-wrap:anywhere]');
   const badge = STATUS_BADGE[video.status];
   const badgeEl = badge ? (
     <span className="mr-1 inline-block rounded bg-negative-soft px-1 align-middle text-[11px] font-medium text-negative">{badge}</span>

@@ -4,12 +4,22 @@
  * blank or broken-looking lists. Pure (no React); shared by the three feature folders.
  */
 import type { Dataset, Video } from '@vti/core';
+import { collectionTimeline } from '../../lib/collection.ts';
+import type { CollectionTimeline } from '../../lib/collection.ts';
 
 export interface DataReadiness {
-  /** Earliest observation instant in the dataset (null when there are no observations). */
+  /**
+   * Earliest observation instant in the dataset (null when there are no observations). It can precede the
+   * collection start (snapshot sources stamp observations with the snapshot time): label it with
+   * collectionStartText(readiness.timeline, …), never as "수집 시작".
+   */
   firstObservationAt: number | null;
   /** Latest observation instant. */
   lastObservationAt: number | null;
+  /** When our collection started (shared with every page, lib/collection.ts). */
+  collectionStartAt: number | null;
+  /** The whole shared collection timeline (for collectionStartText). */
+  timeline: CollectionTimeline;
   totalVideos: number;
   /** Videos with at least two observations (a growth history of their own). */
   withHistory: number;
@@ -24,23 +34,20 @@ const cache = new WeakMap<Dataset, DataReadiness>();
 export function dataReadiness(dataset: Dataset): DataReadiness {
   const hit = cache.get(dataset);
   if (hit) return hit;
-  let first = Infinity;
-  let last = -Infinity;
   let withHistory = 0;
   let maxObservations = 0;
   for (const v of dataset.videos) {
     const obs = v.obs ?? [];
     if (obs.length >= 2) withHistory++;
     if (obs.length > maxObservations) maxObservations = obs.length;
-    for (const p of obs) {
-      if (p.t < first) first = p.t;
-      if (p.t > last) last = p.t;
-    }
   }
+  const timeline = collectionTimeline(dataset);
   const total = dataset.videos.length;
   const r: DataReadiness = {
-    firstObservationAt: Number.isFinite(first) ? first : null,
-    lastObservationAt: Number.isFinite(last) ? last : null,
+    firstObservationAt: timeline.firstObservationAt,
+    lastObservationAt: timeline.lastObservationAt,
+    collectionStartAt: timeline.collectionStartAt,
+    timeline,
     totalVideos: total,
     withHistory,
     maxObservations,

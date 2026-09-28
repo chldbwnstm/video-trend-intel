@@ -11,7 +11,7 @@ import { formatBytes, formatInteger } from '../../lib/format.ts';
 import { tzShort } from '../../lib/timezones.ts';
 import { cx } from '../../lib/cx.ts';
 import { useTz } from '../../data/hooks.ts';
-import { curlCommand, liveStaticUrl } from './apiSpec.ts';
+import { curlCommand, liveStaticUrl, SERVER_MARKER_HEADER, shouldProbeServer } from './apiSpec.ts';
 import type { EndpointDoc, FieldDoc, ParamDoc, StaticFileDoc } from './apiSpec.ts';
 
 /* ------------------------------------------------------------------------------------------ code */
@@ -221,15 +221,17 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
 
-async function fetchJson(url: string, signal: AbortSignal): Promise<{ ok: true; data: unknown } | { ok: false; detail: string }> {
+type FetchResult = { ok: true; data: unknown; fromServer: boolean } | { ok: false; fromServer: false; detail: string };
+
+async function fetchJson(url: string, signal: AbortSignal): Promise<FetchResult> {
   try {
     const res = await fetch(url, { signal, headers: { Accept: 'application/json' } });
-    if (!res.ok) return { ok: false, detail: `HTTP ${res.status}` };
+    if (!res.ok) return { ok: false, fromServer: false, detail: `HTTP ${res.status}` };
     const type = res.headers.get('content-type') ?? '';
-    if (!/json/i.test(type)) return { ok: false, detail: `JSON이 아님 (${type || '형식 미상'})` };
-    return { ok: true, data: await res.json() };
+    if (!/json/i.test(type)) return { ok: false, fromServer: false, detail: `JSON이 아님 (${type || '형식 미상'})` };
+    return { ok: true, data: await res.json(), fromServer: res.headers.has(SERVER_MARKER_HEADER) };
   } catch (e) {
-    return { ok: false, detail: e instanceof Error ? e.message : String(e) };
+    return { ok: false, fromServer: false, detail: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -249,9 +251,41 @@ export function LiveCheck() {
     if (typeof window === 'undefined' || typeof fetch === 'undefined') return;
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 8000);
+    let live = true;
     setServer({ state: 'loading' });
     setStatics({ state: 'loading' });
-    void fetchJson(siteUrl('api/v1/health'), ctl.signal).then((r) => {
+    const checkStatic = (r: FetchResult) => {
+      if (!r.ok || !isRecord(r.data) || !Array.isArray(r.data.files)) {
+        setStatics({ state: 'missing', detail: r.ok ? '응답 형식이 다름' : r.detail });
+        return;
+      }
+      const files = r.data.files.filter((f): f is { path: string; bytes?: unknown } => isRecord(f) && typeof f.path === 'string' && SAFE_PATH_RE.test(f.path));
+      const gen = typeof r.data.generatedAt === 'number' ? r.data.generatedAt : null;
+      const bytes = files.reduce((a, f) => a + (typeof f.bytes === 'number' ? f.bytes : 0), 0);
+      setStatics({
+        state: 'ok',
+        summary: (
+          <>
+            파일 {formatInteger(files.length)}개 · {formatBytes(bytes)}
+            {gen !== null ? ` · 데이터 기준 ${fmtTime(gen, tz)} ${tzShort(tz)}` : ''}
+            {r.fromServer ? ' · 서버가 실시간 계산해 제공' : ''}
+            <details className="mt-1">
+              <summary className="focus-ring w-fit cursor-pointer rounded-sm text-accent-text hover:underline">파일 목록</summary>
+              <ul className="mt-1 max-h-60 overflow-y-auto font-mono text-[11px]">
+                {files.map((f) => (
+                  <li key={f.path}>
+                    <a href={siteUrl(`api/v1/${f.path}`)} target="_blank" rel="noopener noreferrer" className="focus-ring rounded-sm text-accent-text hover:underline">
+                      {f.path}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </>
+        ),
+      });
+    };
+    const checkServer = (r: FetchResult) => {
       if (!r.ok || !isRecord(r.data) || typeof r.data.status !== 'string') {
         setServer({ state: 'missing', detail: r.ok ? '응답 형식이 다름' : r.detail });
         return;
@@ -269,38 +303,22 @@ export function LiveCheck() {
           </>
         ),
       });
-    });
-    void fetchJson(siteUrl('api/v1/index.json'), ctl.signal).then((r) => {
-      if (!r.ok || !isRecord(r.data) || !Array.isArray(r.data.files)) {
-        setStatics({ state: 'missing', detail: r.ok ? '응답 형식이 다름' : r.detail });
+    };
+    void (async () => {
+      // index.json first: both hosts serve it, and its headers tell apps/server apart from static hosting.
+      const idx = await fetchJson(siteUrl('api/v1/index.json'), ctl.signal);
+      if (!live) return;
+      checkStatic(idx);
+      if (!shouldProbeServer(idx)) {
+        setServer({ state: 'missing', detail: '정적 호스팅 (index.json이 정적 파일로 응답해 /health 확인은 생략)' });
         return;
       }
-      const files = r.data.files.filter((f): f is { path: string; bytes?: unknown } => isRecord(f) && typeof f.path === 'string' && SAFE_PATH_RE.test(f.path));
-      const gen = typeof r.data.generatedAt === 'number' ? r.data.generatedAt : null;
-      const bytes = files.reduce((a, f) => a + (typeof f.bytes === 'number' ? f.bytes : 0), 0);
-      setStatics({
-        state: 'ok',
-        summary: (
-          <>
-            파일 {formatInteger(files.length)}개 · {formatBytes(bytes)}
-            {gen !== null ? ` · 데이터 기준 ${fmtTime(gen, tz)} ${tzShort(tz)}` : ''}
-            <details className="mt-1">
-              <summary className="focus-ring w-fit cursor-pointer rounded-sm text-accent-text hover:underline">파일 목록</summary>
-              <ul className="mt-1 max-h-60 overflow-y-auto font-mono text-[11px]">
-                {files.map((f) => (
-                  <li key={f.path}>
-                    <a href={siteUrl(`api/v1/${f.path}`)} target="_blank" rel="noopener noreferrer" className="focus-ring rounded-sm text-accent-text hover:underline">
-                      {f.path}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          </>
-        ),
-      });
-    });
+      const health = await fetchJson(siteUrl('api/v1/health'), ctl.signal);
+      if (!live) return;
+      checkServer(health);
+    })();
     return () => {
+      live = false;
       clearTimeout(t);
       ctl.abort();
     };

@@ -339,6 +339,94 @@ export const SORT_KEYS: SortKey[] = [
 export const sortCodec = enumCodec<SortKey>(SORT_KEYS);
 export const dirCodec = enumCodec<'asc' | 'desc'>(['asc', 'desc']);
 
+/* ------------------------------------------------------------------------------------------ history */
+
+/**
+ * How a URL key records browser history when it changes:
+ * - `replace`: filters, sort, tabs. Changing them does not flood Back (the default for most keys);
+ * - `push`: navigation-like steps (`page`). Back returns to the previous page of results;
+ * - `selection`: a key that opens a drawer or a detail pane (`brand`, `node`, the video drawer's `v`).
+ *   Opening pushes an entry so Back closes it; switching to another value replaces that entry; closing goes
+ *   back to the entry before the open when this session pushed it (no duplicate entry is left behind, so the
+ *   first Back after closing leaves the page), otherwise it replaces (shared links, links from other pages).
+ */
+export type HistoryMode = 'replace' | 'push' | 'selection';
+
+/** Default history mode of keys used across pages; every other key defaults to `replace`. */
+export const URL_HISTORY: Readonly<Record<string, HistoryMode>> = {
+  [URL_KEYS.page]: 'push',
+  brand: 'selection',
+  node: 'selection',
+};
+
+/**
+ * The mode for `key`: an explicit `history` wins, then `replace: true`; a selection key stays a selection
+ * with `replace: false` (so its close still goes back); otherwise `replace: false` pushes; else the key default.
+ */
+export function historyModeFor(key: string, opts: { history?: HistoryMode; replace?: boolean } = {}): HistoryMode {
+  if (opts.history) return opts.history;
+  if (opts.replace === true) return 'replace';
+  const d = URL_HISTORY[key];
+  if (d === 'selection') return 'selection';
+  if (opts.replace === false) return 'push';
+  return d ?? 'replace';
+}
+
+/** Router location-state field marking an entry pushed by opening a selection key (value = the key). */
+export const SELECTION_STATE = 'vtiOpened';
+
+export type HistoryStep = { kind: 'push' | 'replace'; state: Record<string, unknown> | null } | { kind: 'back' };
+
+function openedBy(state: unknown, key: string): boolean {
+  return !!state && typeof state === 'object' && (state as Record<string, unknown>)[SELECTION_STATE] === key;
+}
+
+/**
+ * What a setter does with history (pure; see HistoryMode).
+ * @param wasSet    the key currently has a non-default value
+ * @param willBeSet the new value is non-default
+ * @param state     the current entry's router location state
+ * @param canGoBack an earlier entry exists in this tab's router history
+ */
+export function historyStep(mode: HistoryMode, key: string, wasSet: boolean, willBeSet: boolean, state: unknown, canGoBack: boolean): HistoryStep {
+  if (mode === 'push') return { kind: 'push', state: null };
+  if (mode === 'replace') return { kind: 'replace', state: null };
+  const opened = openedBy(state, key);
+  if (willBeSet) {
+    if (!wasSet) return { kind: 'push', state: { [SELECTION_STATE]: key } };
+    // Another value while open: keep the marker so closing still returns to the entry before the open.
+    return { kind: 'replace', state: opened ? { [SELECTION_STATE]: key } : null };
+  }
+  if (wasSet && opened && canGoBack) return { kind: 'back' };
+  return { kind: 'replace', state: null };
+}
+
+/* ------------------------------------------------------------------------------------------ time zone */
+
+/** Query key of the display time zone (global state; see DatasetProvider). */
+export const TZ_PARAM = 'tz';
+
+/**
+ * The tz value the address bar should carry for `effective` (null = omit the key): omitted only when it is
+ * the default zone AND the viewer's stored preference (a reload without the key resolves to the same zone).
+ */
+export function tzParamFor(effective: string, stored: string, defaultTz: string): string | null {
+  return effective === defaultTz && stored === defaultTz ? null : effective;
+}
+
+/**
+ * A shareable absolute URL of the current view that always names the time zone (even the default), so a
+ * recipient whose own stored zone differs resolves the same local-date windows. `href` is location.href.
+ */
+export function shareableHref(href: string, tz: string): string {
+  const hashAt = href.indexOf('#');
+  if (hashAt < 0) return href;
+  const parsed = searchFromHash(href.slice(hashAt));
+  if (!parsed) return href;
+  const search = applyParamPatch(parsed.search, { [TZ_PARAM]: tz });
+  return `${href.slice(0, hashAt)}#${parsed.pathname}${search}`;
+}
+
 /** Parse the search part of a HashRouter URL (`#/videos?x=1` -> `?x=1`); `null` when not a hash route. */
 export function searchFromHash(hash: string): { pathname: string; search: string } | null {
   if (!hash.startsWith('#/') && hash !== '#' && hash !== '') return null;

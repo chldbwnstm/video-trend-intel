@@ -167,7 +167,7 @@ describe('queryResultToCsv', () => {
     expect(r[col('협찬 브랜드')]).toBe('브랜드A; Brand, Inc.');
     expect(r[col('언어')]).toBe('ko');
     expect(r[col('업로드 국가(원천 제공)')]).toBe('KR');
-    expect(r[col('형식')]).toBe('숏폼');
+    expect(r[col('형식')]).toBe('쇼츠·숏폼'); // the UI's label
     expect(r[col('상태')]).toBe('공개');
     // the formula-looking title is neutralized
     expect(row('x:plain')[col('제목')]).toBe("'=cmd|calc");
@@ -181,9 +181,11 @@ describe('queryResultToCsv', () => {
       col(`${m.label} 메모`);
     }
     const r = row('youtube:tricky');
+    // upload mode: the latest value as of the data now; last observed 9h earlier, so a lower bound
     expect(r[col('누적 조회수')]).toBe('2000');
-    expect(r[col('누적 조회수 상태')]).toBe('정확(exact)');
+    expect(r[col('누적 조회수 상태')]).toBe('하한(lower_bound)');
     expect(r[col('누적 조회수 기준 시각(Asia/Seoul)')]).toBe('2026-10-01 00:00');
+    expect(r[col('누적 조회수 메모')]).toBe('after_last_observation');
     expect(r[col('기간 댓글')]).toBe('12');
     expect(r[col('참여율')]).toBe(String(Number(((150 + 12) / 2000).toFixed(6))));
     expect(r[col('참여율 합산 항목')]).toBe('likes+comments');
@@ -201,10 +203,22 @@ describe('queryResultToCsv', () => {
     const r = row('youtube:tricky');
     expect(r[col('날짜 기준')]).toBe('업로드 기간');
     expect(r[col('기간 시작')]).toBe('2026-09-01');
-    expect(r[col('기간 종료(포함)')]).toBe('2026-09-30');
+    expect(r[col('기간 끝')]).toBe('2026-09-30');
     expect(r[col('기간 시간대')]).toBe('Asia/Seoul');
-    expect(r[col('기간 완료 여부')]).toBe('완료');
+    expect(r[col('기간 상태')]).toBe('완료(날짜 양 끝 포함)');
     expect(r[col('데이터 기준 시각(Asia/Seoul)')]).toBe('2026-10-02 09:00');
+  });
+
+  it('writes rolling windows as half-open date-times, not calendar dates', () => {
+    const at = ts('2026-09-28T15:26Z'); // 2026-09-29 00:26 KST
+    const v = makeVideo({ id: 'peertube:p1', publishedAt: ts('2026-09-01'), obs: [makeObs(at - 170 * HOUR_MS, 10), makeObs(at, 90)] });
+    const r = queryVideos(makeIndex({ videos: [v], generatedAt: at }), { dateMode: 'activity', rollingHours: 168, tz: SEOUL, sort: 'views_period', now: at });
+    const parsed = parseCsv(queryResultToCsv(r, SEOUL, { dateMode: 'activity' }).slice(1));
+    const h = parsed[0];
+    expect(parsed[1][h.indexOf('기간 시작')]).toBe('2026-09-22 00:26');
+    expect(parsed[1][h.indexOf('기간 끝')]).toBe('2026-09-29 00:26');
+    expect(parsed[1][h.indexOf('기간 상태')]).toBe('롤링 168시간(시작 포함·끝 미포함)');
+    expect(r.notes[0]).toContain('2026-09-22 00:26 ~ 2026-09-29 00:26 (Asia/Seoul)');
   });
 
   it('shows a running window, other display zones and age-mode labels', () => {
@@ -213,7 +227,7 @@ describe('queryResultToCsv', () => {
     const h = rr[0];
     expect(h).toContain('게시 시각(Australia/Sydney)');
     const r1 = rr[1];
-    expect(r1[h.indexOf('기간 완료 여부')]).toBe('진행 중(부분 집계)');
+    expect(r1[h.indexOf('기간 상태')]).toBe('진행 중(부분 집계, 날짜 양 끝 포함)');
     expect(r1[h.indexOf('날짜 기준')]).toBe('조회 발생 기간');
     // the window keeps its own zone
     expect(r1[h.indexOf('기간 시작')]).toBe('2026-09-01');

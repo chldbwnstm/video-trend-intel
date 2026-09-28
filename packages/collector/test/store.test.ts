@@ -108,6 +108,43 @@ describe('migrations', () => {
     s2.close();
   });
 
+  it('v2 keeps only the latest source window per (video, metric, window) and repairs text stored by older adapters', () => {
+    const path = join(tempDir(), 'v1.sqlite');
+    const s1 = openStore(path);
+    // simulate a v1 store: window history + rows written by the old niconico / peertube / youtube-rss adapters
+    s1.upsertVideo(video(), NOW, 'dailymotion');
+    const ins = s1.db.prepare('INSERT INTO source_windows (video_id, metric, window_hours, value, observed_at, src) VALUES (?, ?, ?, ?, ?, ?)');
+    for (let i = 0; i < 3; i++) {
+      ins.run('dailymotion:x1', 'views', 24, 10 + i, NOW - (3 - i) * HOUR, 'dailymotion@1');
+      ins.run('dailymotion:x1', 'views', 168, 100 + i, NOW - (3 - i) * HOUR, 'dailymotion@1');
+    }
+    const nico = s1.upsertVideo(video({ platform: 'niconico', platformId: 'sm1', account: account({ platform: 'niconico', platformId: 'user/1' }), title: '#133【プラモデル解説】&quot;HG&quot; ドラクエ1&amp;2', tags: ['R&amp;B'], language: 'ja', languageSource: 'detected' }), NOW, 'niconico');
+    const pt = s1.upsertVideo(video({ platform: 'peertube', platformId: 'u@tube.example', account: account({ platform: 'peertube', platformId: 'a@tube.example' }), title: 'Jacopo Amigoni, alcune pitture a carattere mitologico', description: 'un &quot;capolavoro&quot;', tags: [], language: 'ko', languageSource: 'source' }), NOW, 'peertube');
+    const ptKo = s1.upsertVideo(video({ platform: 'peertube', platformId: 'k@tube.example', account: account({ platform: 'peertube', platformId: 'a@tube.example' }), title: '명일방주 PA-6', tags: [], language: 'ko', languageSource: 'source' }), NOW, 'peertube');
+    const yt = s1.upsertVideo(video({ platform: 'youtube', platformId: 'y1', account: account({ platform: 'youtube', platformId: 'UCa' }), title: 'Iran says no talks planned as Trump expects more negotiations', description: 'Arirang News', tags: [], language: 'ko', languageSource: 'detected' }), NOW, 'youtube-rss');
+    const ytKo = s1.upsertVideo(video({ platform: 'youtube', platformId: 'y2', account: account({ platform: 'youtube', platformId: 'UCa' }), title: '뉴스 속보', tags: [], language: 'ko', languageSource: 'detected' }), NOW, 'youtube-rss');
+    const hashBefore = s1.getVideo(nico.id)!.textHash;
+    s1.db.exec('PRAGMA user_version = 1');
+    s1.close();
+
+    const s2 = openStore(path);
+    expect(s2.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(s2.getSourceWindows('dailymotion:x1').map((w) => [w.windowHours, w.value])).toEqual([
+      [24, 12],
+      [168, 102],
+    ]);
+    const n = s2.getVideo(nico.id)!;
+    expect(n.title).toBe('#133【プラモデル解説】"HG" ドラクエ1&2');
+    expect(n.tags).toEqual(['R&B']);
+    expect(n.textHash).not.toBe(hashBefore); // topics are re-derived by the next classification
+    expect(s2.getVideo(pt.id)).toMatchObject({ description: 'un "capolavoro"', language: null, languageSource: null });
+    expect(s2.getVideo(ptKo.id)).toMatchObject({ language: 'ko', languageSource: 'source' });
+    expect(s2.getVideo(yt.id)).toMatchObject({ language: null, languageSource: null });
+    expect(s2.getVideo(ytKo.id)).toMatchObject({ language: 'ko', languageSource: 'detected' });
+    expect(s2.repairStoredVideos()).toEqual({ entities: 0, peertubeLanguage: 0, seedLanguage: 0 }); // idempotent
+    s2.close();
+  });
+
   it('refuses a database from a newer collector', () => {
     const path = join(tempDir(), 'future.sqlite');
     const { DatabaseSync: Db } = createRequire(import.meta.url)('node:sqlite') as { DatabaseSync: new (p: string) => DatabaseSync };
@@ -249,6 +286,14 @@ describe('observations', () => {
     expect(s.addSourceWindows('dailymotion:x1', [w, { ...w, windowHours: 168, value: 90 }, { ...w, value: -1, windowHours: 720 }])).toBe(2);
     expect(s.addSourceWindows('dailymotion:x1', [w])).toBe(0);
     expect(s.getSourceWindows('dailymotion:x1')).toHaveLength(2);
+    // only the latest value per (metric, window) is kept: a newer run replaces it, an older one is ignored
+    expect(s.addSourceWindows('dailymotion:x1', [{ ...w, value: 70, observedAt: NOW + 3 * HOUR }])).toBe(1);
+    expect(s.addSourceWindows('dailymotion:x1', [{ ...w, value: 1, observedAt: NOW - HOUR }])).toBe(0);
+    expect(s.getSourceWindows('dailymotion:x1').map((x) => [x.windowHours, x.value, x.observedAt])).toEqual([
+      [168, 90, NOW],
+      [24, 70, NOW + 3 * HOUR],
+    ]);
+    expect(s.counts().sourceWindows).toBe(2);
 
     expect(s.addFollowerObservation('dailymotion:acc1', { t: NOW, value: 1000, src: 's@1' })).toBe(true);
     expect(s.addFollowerObservation('dailymotion:acc1', { t: NOW + 5 * 60_000, value: 1000, src: 's@1' })).toBe(false);
@@ -316,6 +361,27 @@ describe('tiered refresh candidates', () => {
     // adapter id resolves to its platform
     expect(s.getRefreshCandidates('dailymotion', NOW).length).toBe(c.length);
     expect(() => s.getRefreshCandidates('no-such-source', NOW)).toThrow(/unknown source/);
+  });
+
+  it('snapshot sources: videos already at the newest snapshot are not due until a newer snapshot can exist', () => {
+    const s = mem();
+    const snap = NOW - 20 * HOUR; // newest snapshot in the store, 20 h old
+    seed(s, 'at-snapshot-fresh', 1 * DAY, 20 * HOUR); // fresh tier, observed at the newest snapshot
+    seed(s, 'at-snapshot-recent', 5 * DAY, 20 * HOUR); // 12 h tier would be due
+    seed(s, 'older-snapshot', 5 * DAY, 44 * HOUR); // observed at the previous snapshot: due
+    const opts = { snapshotIntervalMs: DAY };
+    expect(s.getRefreshCandidates('dailymotion', NOW, opts).map((c) => c.platformId)).toEqual(['older-snapshot']);
+    // once a newer snapshot can exist (>= ~24 h after the newest one), everything due is requested again
+    expect(s.getRefreshCandidates('dailymotion', snap + 23 * HOUR, opts).map((c) => c.platformId).sort()).toEqual(['at-snapshot-fresh', 'at-snapshot-recent', 'older-snapshot']);
+    expect(s.getRefreshCandidates('dailymotion', NOW).length).toBe(3); // not a snapshot source
+  });
+
+  it('onlySource restricts candidates to videos that source returned', () => {
+    const s = mem();
+    s.upsertVideo(video({ platformId: 'mine', publishedAt: NOW - HOUR }), NOW, 'dailymotion');
+    s.upsertVideo(video({ platformId: 'theirs', publishedAt: NOW - HOUR }), NOW, 'other-source');
+    expect(s.getRefreshCandidates('dailymotion', NOW, { onlySource: 'dailymotion' }).map((c) => c.platformId)).toEqual(['mine']);
+    expect(s.getRefreshCandidates('dailymotion', NOW).length).toBe(2);
   });
 
   it('refreshes old videos weekly and only in the top slice by views', () => {

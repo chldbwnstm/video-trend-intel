@@ -2,8 +2,8 @@
  * MultiSelect: filter popover with search + checkboxes (languages, upload countries, formats, topics...).
  * Pager: page navigation for long result lists (URL key `page`, 1-based).
  */
-import { useId, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cx } from '../lib/cx.ts';
 import { textMatchesSafe } from '../lib/search.ts';
@@ -131,6 +131,38 @@ export interface PagerProps {
   total: number;
   onChange: (page: number) => void;
   className?: string;
+  /**
+   * What to bring into view after a page change. Default: the table in the Pager's card (or the element
+   * marked `data-pager-scope`), so the user lands on the first row of the new page instead of the bottom
+   * of it. `false` disables scrolling.
+   */
+  scrollTarget?: RefObject<HTMLElement | null> | false;
+}
+
+/**
+ * The element to show after a page change: an explicit target, else the table (or the scope itself) inside
+ * the closest `[data-pager-scope]` / card around the pager.
+ */
+export function pagerScrollTarget(from: Element | null): HTMLElement | null {
+  const scope = from?.closest<HTMLElement>('[data-pager-scope], [data-card]') ?? null;
+  if (!scope) return null;
+  return scope.querySelector<HTMLElement>('table') ?? scope;
+}
+
+/**
+ * After a page change: scroll the results into view when their start is above the viewport (the pager sits
+ * at the bottom of a long list) and move focus to the table caption, so keyboard and screen-reader users
+ * start reading the new page from its first row. The caption is announced (it names the page).
+ */
+export function revealResults(target: HTMLElement | null): void {
+  if (!target || typeof window === 'undefined') return;
+  const top = target.getBoundingClientRect().top;
+  // scroll-margin-top (index.css) keeps the start below the sticky top bar.
+  if (top < 0) target.scrollIntoView({ block: 'start' });
+  const caption = target.tagName === 'TABLE' ? target.querySelector<HTMLElement>('caption') : null;
+  const focusEl = caption ?? target;
+  if (!focusEl.hasAttribute('tabindex')) focusEl.setAttribute('tabindex', '-1');
+  focusEl.focus({ preventScroll: true });
 }
 
 /** Page count for a total (at least 1). */
@@ -144,25 +176,31 @@ export function clampPage(page: number, total: number, pageSize: number): number
   return Math.min(pageCount(total, pageSize), Math.max(1, Math.trunc(page)));
 }
 
-export function Pager({ page, pageSize, total, onChange, className }: PagerProps) {
+export function Pager({ page, pageSize, total, onChange, className, scrollTarget }: PagerProps) {
+  const navRef = useRef<HTMLElement>(null);
   const pages = pageCount(total, pageSize);
   const current = clampPage(page, total, pageSize);
   const from = total === 0 ? 0 : (current - 1) * pageSize + 1;
   const to = Math.min(total, current * pageSize);
   const btn = 'focus-ring inline-flex size-8 items-center justify-center rounded-md border border-line bg-surface text-fg-2 hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-40';
+  const go = (p: number) => {
+    onChange(p);
+    if (scrollTarget === false) return;
+    revealResults(scrollTarget ? scrollTarget.current : pagerScrollTarget(navRef.current));
+  };
   return (
-    <nav aria-label="페이지 이동" className={cx('flex flex-wrap items-center justify-between gap-2 text-[13px] text-fg-3', className)}>
+    <nav ref={navRef} aria-label="페이지 이동" className={cx('flex flex-wrap items-center justify-between gap-2 text-[13px] text-fg-3', className)}>
       <span className="tabular">
         {total.toLocaleString('ko-KR')}개 중 {from.toLocaleString('ko-KR')}–{to.toLocaleString('ko-KR')}
       </span>
       <span className="flex items-center gap-1.5">
-        <button type="button" className={btn} onClick={() => onChange(current - 1)} disabled={current <= 1} aria-label="이전 페이지">
+        <button type="button" className={btn} onClick={() => go(current - 1)} disabled={current <= 1} aria-label="이전 페이지">
           <ChevronLeft className="size-4" aria-hidden />
         </button>
         <span className="min-w-16 text-center tabular" aria-live="polite">
           {current} / {pages}
         </span>
-        <button type="button" className={btn} onClick={() => onChange(current + 1)} disabled={current >= pages} aria-label="다음 페이지">
+        <button type="button" className={btn} onClick={() => go(current + 1)} disabled={current >= pages} aria-label="다음 페이지">
           <ChevronRight className="size-4" aria-hidden />
         </button>
       </span>

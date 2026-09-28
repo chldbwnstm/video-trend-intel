@@ -11,11 +11,21 @@
  * Negated or solicitation phrases never count: '협찬 아님', '#광고아님', '광고/협찬 문의', 'not sponsored',
  * '案件ではありません'. Brand names only count next to a cue (or anywhere in the title/tags when the video is
  * disclosed), except names captured by explicit patterns ('sponsored by X', 'X 협찬', '제작 지원: X').
+ *
+ * Brand attribution guards (reviewed on real data, ~58% precise before them):
+ * - captures that are pronouns, particles or clauses ('여러분', '에서', '리뷰 의무 없는 ...') are rejected;
+ * - viewer / filmer footage credits ('視聴者様からご提供いただいた映像') are not disclosures;
+ * - brand aliases inside other words ('테스토스테론' is not 토스, '뺑소니' not 소니, '코딩애플' not Apple) and
+ *   'LG화학' (its own brand, not LG) are trapped;
+ * - marketplaces where a product is bought (네이버 스토어, 무신사, 올리브영, 쿠팡, 11번가, G마켓 ...) and
+ *   shop / short links are credited only when explicitly named as the sponsor ('무신사 협찬');
+ * - near promo-only ('likely') cues, hashtags count only on the cue's own line;
+ * - the uploader's own name / handle (when given) is never its own sponsor.
  */
 import type { Evidence, SponsorshipSignal } from './types.ts';
 import { INVISIBLE_RE, normalizeText } from './text.ts';
 
-export const SPONSORSHIP_VERSION = 'sponsor-2026.09.1';
+export const SPONSORSHIP_VERSION = 'sponsor-2026.09.2';
 
 type Field = 'title' | 'description' | 'tags';
 type CueKind = 'disclosure' | 'promo' | 'weak';
@@ -50,6 +60,19 @@ const r = (src: string) => new RegExp(src, 'giu');
 
 /** '映像提供', '情報を提供', '写真の提供' are credits/requests, not sponsorship. */
 const JA_NOT_SPONSOR_LB = '(?<!(?:映像|画像|写真|情報|データ|素材|楽曲|音源|動画|番組|資料)(?:を|の)?)';
+/** Viewers / filmers / posters providing footage: '視聴者様及び撮影者様からご提供いただいたドライブレコーダー映像'. */
+const JA_FOOTAGE_GIVER_RE = /(?:視聴者|撮影者|投稿者|ユーザー|リスナー|読者|提供者)/u;
+const JA_FOOTAGE_RE = /(?:映像|動画|画像|写真|素材)/u;
+
+/** A Japanese '提供' cue that credits footage sent in by viewers / filmers, not a sponsor. */
+function isFootageCredit(text: string, index: number, end: number): boolean {
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+  const before = text.slice(Math.max(lineStart, index - 30), index);
+  let lineEnd = text.indexOf('\n', end);
+  if (lineEnd < 0) lineEnd = text.length;
+  const after = text.slice(end, Math.min(lineEnd, end + 20));
+  return JA_FOOTAGE_GIVER_RE.test(before) && JA_FOOTAGE_RE.test(after);
+}
 
 const CUE_RULES: CueRule[] = [
   // ---- Korean disclosures
@@ -182,7 +205,10 @@ function isNegated(text: string, index: number, end: number): boolean {
 const AFFILIATE_MASK_RE = r(
   '쿠팡\\s*파트너스|amazon\\s*associates?|amazon\\s*アソシエイト|アマゾン\\s*アソシエイト|楽天\\s*アフィリエイト|' +
     '(?:https?://)?(?:[a-z0-9-]+\\.)*(?:coupang\\.com|coupa\\.ng|amzn\\.to|amzn\\.asia|a\\.r10\\.to|rakuten\\.co\\.jp|amazon\\.[a-z.]{2,6}|' +
-    'naver\\.com|aliexpress\\.com|temu\\.to|shope\\.ee|moshimo\\.com|a8\\.net|valuecommerce\\.com)\\S*',
+    'naver\\.com|naver\\.me|aliexpress\\.com|temu\\.to|shope\\.ee|moshimo\\.com|a8\\.net|valuecommerce\\.com|' +
+    // shops and URL shorteners (a product link is not the sponsor)
+    'oy\\.run|oliveyoung\\.co\\.kr|musinsa\\.com|11st\\.co\\.kr|gmarket\\.co\\.kr|ssg\\.com|kurly\\.com|zigzag\\.kr|a-bly\\.com|29cm\\.co\\.kr|' +
+    'bit\\.ly|han\\.gl|url\\.kr|vo\\.la|me2\\.do|t\\.ly|tinyurl\\.com|buly\\.kr|linktr\\.ee|inpock\\.co\\.kr|lnk\\.bio)\\S*',
 );
 
 function maskAffiliate(s: string): string {
@@ -198,6 +224,7 @@ function maskAffiliate(s: string): string {
 const BRAND_LIST: string[][] = [
   // Korean conglomerates, platforms, retail
   ['삼성', '삼성전자', 'samsung', 'samsung electronics', 'サムスン', '갤럭시', 'galaxy s', 'galaxy z', 'galaxy buds', 'galaxy watch'],
+  ['LG화학', 'lg화학', 'lg chem'],
   ['LG', 'lg', 'lg전자', '엘지', 'lg electronics'],
   ['현대자동차', '현대자동차', '현대차', 'hyundai'],
   ['기아', '기아자동차', '기아차', 'kia'],
@@ -434,20 +461,26 @@ const BRAND_LIST: string[][] = [
 
 /** Substrings in which a (non-ASCII) brand alias occurrence does not count. */
 const BRAND_TRAPS: Record<string, string[]> = {
-  애플: ['애플망고', '애플파이', '애플민트', '파인애플', '애플수박', '애플사이다'],
+  애플: ['애플망고', '애플파이', '애플민트', '파인애플', '애플수박', '애플사이다', '코딩애플', '애플 코딩', '애플코딩'],
   アップル: ['パイナップル', 'アップルパイ'],
   삼성: ['삼성동', '삼성역'],
-  토스: ['토스트', '토스트기', '토스카'],
+  토스: ['토스트', '토스트기', '토스카', '테스토스테론', '토스카나'],
   카카오: ['카카오닙스', '카카오 닙스'],
   헤라: ['헤라클레스'],
   아마존: ['아마존 열대', '아마존강', '아마존 밀림'],
   지그재그: ['지그재그로'],
   레고: ['레고랜드'],
   롯데: ['롯데월드', '롯데 자이언츠', '롯데자이언츠'],
-  소니: ['소니아'],
+  소니: ['소니아', '뺑소니'],
 };
 /** ASCII aliases that are too generic on their own and only count after 'sponsored by' style captures. */
 const CAPTURE_ONLY_ALIASES = new Set(['toss', 'ably', 'etude', 'audible', 'apple', 'amazon', 'google', 'blizzard', 'wix', 'zigzag', 'hera beauty', '아마존', '구글']);
+/**
+ * Marketplaces / retailers (canonical names): where a product is bought, not who paid for the video. They are
+ * credited only when explicitly named as the sponsor ('무신사 협찬', 'sponsored by Olive Young'), never from a
+ * mention or shop link near a cue.
+ */
+const RETAILER_BRANDS = new Set(['네이버', '무신사', '올리브영', '쿠팡', '11번가', 'G마켓', '지그재그', '에이블리', '29CM', '마켓컬리']);
 
 interface BrandAlias {
   alias: string;
@@ -499,13 +532,16 @@ function brands() {
   return brandIndex;
 }
 
-/** Curated brands mentioned in `text` (longest alias wins; overlapping shorter aliases are masked). */
+/**
+ * Curated brands mentioned in `text` (longest alias wins; overlapping shorter aliases are masked). Without
+ * `allowGeneric` (mentions near cues, not explicit captures) capture-only aliases and retailers are skipped.
+ */
 function findCuratedBrands(text: string, allowGeneric: boolean): { name: string; match: string }[] {
   const { aliases } = brands();
   let t = normalizeText(text);
   const out: { name: string; match: string }[] = [];
   for (const a of aliases) {
-    if (!allowGeneric && CAPTURE_ONLY_ALIASES.has(a.alias)) continue;
+    if (!allowGeneric && (CAPTURE_ONLY_ALIASES.has(a.alias) || RETAILER_BRANDS.has(a.name))) continue;
     if (!t.includes(a.alias)) continue;
     let found = false;
     if (a.ascii) {
@@ -547,7 +583,14 @@ const GENERIC_CAPTURES = new Set([
   'you', 'me', 'us', 'them', 'itself', 'none', 'nothing', 'company', 'companies', 'brand', 'brands',
   '企業', '商品', '製品', '動画', '今回', '本動画', '当チャンネル', 'スポンサー', 'サービス', 'アイテム', 'グッズ', 'チャンネル', 'メーカー',
   'ブランド', 'クライアント', '없음', '없습니다', '미정', 'n/a', 'na', 'tbd', 'x',
+  // pronouns / audiences / particles / clauses captured before '후원' or after '협찬 :' ('여러분의 후원을')
+  '여러분', '시청자', '시청자분들', '구독자', '구독자분들', '팬', '팬분들', '에서', '에게', '께서', '리뷰', '리뷰 의무',
+  '撮影者', '視聴者', '投稿者', '皆様', '皆さん', 'ユーザー', 'リスナー',
 ]);
+/** A capture that is only a particle ('에서' in '... 공단 에서 제작지원'). */
+const KO_PARTICLE_ONLY_RE = /^(?:으로부터|로부터|에게서|에서|께서|측에서|에게|한테|으로|의|이|가|은|는|와|과|을|를|로|도)$/u;
+/** A capture that is a clause about the deal, not a name ('리뷰 의무 없는 제품 제공', '없음'). */
+const CLAUSE_CAPTURE_RE = /의무|없는|없음|없이|아닌|아님/u;
 const KO_PARTICLE_RE = /(?:으로부터|로부터|에게서|에서|께서|측에서|측|님의|님|으로|의|이|가|은|는|와|과|을|를|로|도)$/u;
 
 function cleanEnglishCapture(raw: string): string | null {
@@ -573,6 +616,7 @@ function acceptCapture(raw: string | null): string | null {
   }
   let s = raw.trim().replace(/^[@#"'“‘(\[]+|["'”’)\].,!?:;]+$/gu, '').trim();
   if (!s) return null;
+  if (KO_PARTICLE_ONLY_RE.test(s) || CLAUSE_CAPTURE_RE.test(s)) return null;
   const canon = canonicalBrand(s);
   if (canon) return canon;
   // Korean particle stripping ('삼성전자로부터' -> '삼성전자')
@@ -649,6 +693,7 @@ function scanCues(field: Field, text: string, out: Cue[]): void {
       const index = m.index ?? 0;
       const end = index + m[0].length;
       if (!rule.noNegation && isNegated(text, index, end)) continue;
+      if (rule.label === '提供' && isFootageCredit(text, index, end)) continue;
       // A '#광고아님' style hashtag is handled as a hashtag, never as the '광고' phrase inside it.
       out.push({ kind: rule.kind, field, index, end, label: rule.label ?? m[0].trim().toLowerCase().replace(/\s+/g, ' ') });
     }
@@ -664,10 +709,47 @@ function scanCues(field: Field, text: string, out: Cue[]): void {
   }
 }
 
-export function detectSponsorship(input: { title: string; description: string | null; tags: string[] }): SponsorshipSignal | null {
-  const title = prep(input.title);
-  const description = prep(input.description);
-  const tagList = (input.tags ?? []).map((t) => prep(t).trim()).filter(Boolean);
+/** Normalized, space-free forms of the uploader's name, its '|' parts and handle (never its own sponsor). */
+function selfBrandTerms(accountName: string | null | undefined, accountHandle: string | null | undefined): string[] {
+  const out: string[] = [];
+  const add = (x: string | null | undefined) => {
+    const k = x ? normalizeText(x).replace(/^@/, '') : '';
+    if (k.length >= 2 && !out.includes(k)) out.push(k);
+  };
+  add(accountName);
+  for (const part of (accountName ?? '').split(/\s[|/]\s|[|｜]/)) add(part.trim());
+  add(accountHandle);
+  return out.sort((a, b) => b.length - a.length);
+}
+
+/** Blank out the uploader's own name / handle (case-insensitive) so it is not credited as a brand. */
+function maskTerms(text: string, terms: string[]): string {
+  if (!terms.length || !text) return text;
+  let t = text;
+  for (const term of terms) {
+    const re = new RegExp(escapeRe(term).replace(/ /g, '\\s*'), 'giu');
+    t = t.replace(re, (m) => ' '.repeat(m.length));
+  }
+  return t;
+}
+
+/** Hashtags on other lines than `keepLine` are blanked (promo-only cues credit hashtag brands on their own line). */
+function maskOtherLineHashtags(segment: string, keepFrom: number, keepTo: number): string {
+  return segment.replace(/[#＃][^\s#＃]+/gu, (m, offset: number) => (offset >= keepFrom && offset < keepTo ? m : ' '.repeat(m.length)));
+}
+
+export function detectSponsorship(input: {
+  title: string;
+  description: string | null;
+  tags: string[];
+  /** Uploading account's display name / handle (optional): a channel is never its own sponsor. */
+  accountName?: string | null;
+  accountHandle?: string | null;
+}): SponsorshipSignal | null {
+  const selfTerms = selfBrandTerms(input.accountName, input.accountHandle);
+  const title = maskTerms(prep(input.title), selfTerms);
+  const description = maskTerms(prep(input.description), selfTerms);
+  const tagList = (input.tags ?? []).map((t) => maskTerms(prep(t), selfTerms).trim()).filter(Boolean);
   const tagsText = tagList.join('\n');
   const texts: Record<Field, string> = { title, description, tags: tagsText };
 
@@ -754,7 +836,13 @@ export function detectSponsorship(input: { title: string; description: string | 
     const lineStart = text.lastIndexOf('\n', cue.index - 1) + 1;
     const start = Math.max(0, cue.index - BRAND_WINDOW);
     const end = Math.min(text.length, cue.end + BRAND_WINDOW);
-    const window = maskAffiliate(text.slice(start, end));
+    let segment = text.slice(start, end);
+    if (cue.kind !== 'disclosure') {
+      // '할인코드 ...' then a hashtag block ('#폭스바겐 #벤츠') a few lines below: those hashtags are topics
+      const cueLineEnd = text.indexOf('\n', cue.end);
+      segment = maskOtherLineHashtags(segment, Math.max(0, lineStart - start), (cueLineEnd < 0 ? text.length : cueLineEnd) - start);
+    }
+    const window = maskAffiliate(segment);
     const found = findCuratedBrands(window, false);
     for (const b of found) addBrand(b.name, cue.field, b.match);
     if (cue.kind === 'weak') {

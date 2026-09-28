@@ -4,7 +4,7 @@
  */
 import type { AgeDays, DateMode, MetricStatus, MetricValue, QueryResult, VideoMetrics, VideoRow } from './types.ts';
 import { PLATFORM_LABELS } from './types.ts';
-import { formatInTz, localDateOf } from './time.ts';
+import { HOUR, formatInTz, isLocalDateWindow, localDateOf } from './time.ts';
 import { categoryPathLabel } from './taxonomy.ts';
 
 /** Byte-order mark so Excel opens the UTF-8 file with Korean intact. */
@@ -83,12 +83,13 @@ function header(tz: string): string[] {
     if (m.key === 'engagementRate') h.push('참여율 합산 항목');
     if (m.key === 'outperformance') h.push('성과 비교 경과일', '성과 비교 영상 수');
   }
-  h.push('날짜 기준', '기간 시작', '기간 종료(포함)', '기간 시간대', '기간 완료 여부', `데이터 기준 시각(${tz})`);
+  h.push('날짜 기준', '기간 시작', '기간 끝', '기간 시간대', '기간 상태', `데이터 기준 시각(${tz})`);
   return h.map((x) => csvField(x, true));
 }
 
 const VIDEO_STATUS_KO: Record<string, string> = { active: '공개', deleted: '삭제됨', private: '비공개', unknown: '알 수 없음' };
-const FORMAT_KO: Record<string, string> = { short: '숏폼', long: '롱폼', live: '라이브', unknown: '알 수 없음' };
+/** Same labels as the UI's format filter and detail drawer (apps/web lib/display.ts FORMAT_LABELS). */
+export const CSV_FORMAT_LABELS: Record<string, string> = { short: '쇼츠·숏폼', long: '일반 영상', live: '라이브', unknown: '형식 미상' };
 
 function metricFields(m: MetricValue | undefined, tz: string): string[] {
   if (!m) return ['', '', '', ''];
@@ -110,7 +111,7 @@ function rowFields(r: VideoRow, result: QueryResult, tz: string, modeLabel: stri
     csvField(r.account?.name ?? '', true),
     csvField(v.accountId, true),
     csvField(Number.isFinite(v.publishedAt) ? formatInTz(v.publishedAt, tz, 'datetime') : ''),
-    csvField(FORMAT_KO[v.format] ?? v.format, true),
+    csvField(CSV_FORMAT_LABELS[v.format] ?? v.format, true),
     csvField(v.language ?? '', true),
     csvField(v.country ?? '', true),
     csvField(VIDEO_STATUS_KO[v.status] ?? v.status, true),
@@ -136,23 +137,37 @@ function rowFields(r: VideoRow, result: QueryResult, tz: string, modeLabel: stri
  * Columns: platform, video id, url, title, account (name + id), published (in `tz`), format, language, country,
  * video status, categories (path labels), topics, sponsorship (+ brands); then for every metric its value,
  * status, asOf (in `tz`) and note (+ engagement components, outperformance age/peers); then the window info
- * (date semantics, inclusive local start/end, complete or running) and the data as-of time.
+ * (date semantics, start, end, zone, state) and the data as-of time.
  * Numbers are raw (no thousands separators; rates as fractions, e.g. 0.05 = 5%); missing values are empty,
  * never 0. Only `result.rows` (the current page) is written; pass a query without `limit` to export everything.
- * The window dates are the inclusive local dates in the window's own zone (`window.tz`, also exported).
+ * Window columns, in the window's own zone (`window.tz`, also exported):
+ * - a local date range: 기간 시작 / 기간 끝 = its inclusive local dates, 기간 상태 = '완료(날짜 양 끝 포함)' or
+ *   '진행 중(부분 집계, 날짜 양 끝 포함)';
+ * - a rolling window (ends not at local midnight): the half-open local date-times [start, end), 기간 상태 =
+ *   '롤링 N시간(시작 포함·끝 미포함)', so a 168-hour window is never read as 8 calendar days.
+ * Formats use the UI's labels (CSV_FORMAT_LABELS).
  * `options.dateMode` / `options.ageDays` label the date semantics; when omitted the label is read from the
  * result's first note (queryVideos always starts with the date-semantics note).
  */
 export function queryResultToCsv(result: QueryResult, tz: string, options: { dateMode?: DateMode; ageDays?: AgeDays | null } = {}): string {
   const w = result.window;
-  const windowFields = w
-    ? [
-        csvField(localDateOf(w.startMs, w.tz)),
-        csvField(localDateOf(Math.max(w.startMs, w.endMs - 1), w.tz)),
-        csvField(w.tz, true),
-        csvField(w.incomplete ? '진행 중(부분 집계)' : '완료', true),
-      ]
-    : ['', '', '', ''];
+  let windowFields = ['', '', '', ''];
+  if (w && isLocalDateWindow(w)) {
+    windowFields = [
+      csvField(localDateOf(w.startMs, w.tz)),
+      csvField(localDateOf(Math.max(w.startMs, w.endMs - 1), w.tz)),
+      csvField(w.tz, true),
+      csvField(w.incomplete ? '진행 중(부분 집계, 날짜 양 끝 포함)' : '완료(날짜 양 끝 포함)', true),
+    ];
+  } else if (w) {
+    const hours = Math.round(((w.endMs - w.startMs) / HOUR) * 100) / 100;
+    windowFields = [
+      csvField(formatInTz(w.startMs, w.tz, 'datetime')),
+      csvField(formatInTz(w.endMs, w.tz, 'datetime')),
+      csvField(w.tz, true),
+      csvField(`롤링 ${hours}시간(시작 포함·끝 미포함)${w.incomplete ? ', 진행 중(부분 집계)' : ''}`, true),
+    ];
+  }
   const modeLabel = dateModeLabel(result, options.dateMode, options.ageDays ?? null);
   const lines = [csvRow(header(tz))];
   for (const r of result.rows) lines.push(csvRow(rowFields(r, result, tz, modeLabel, windowFields)));
