@@ -388,9 +388,9 @@ describe('MultiSelect / Pager', () => {
 describe('routes', () => {
   it('has every SPEC route with a Korean label', () => {
     const paths = NAV_ITEMS.map((i) => i.path);
-    expect(paths).toEqual(['/', '/videos', '/trends', '/ratings', '/explore', '/creators', '/compare', '/brands', '/taxonomy', '/coverage', '/api-docs']);
-    expect(NAV_SECTIONS.flatMap((s) => s.items)).toHaveLength(11);
-    expect(NAV_ITEMS.map((i) => i.label)).toEqual(['대시보드', '영상 탐색', '트렌드', '비디오 레이팅', '기회 탐색', '크리에이터', '크리에이터 비교', '브랜드 협업', '분류 체계', '데이터 범위', 'API']);
+    expect(paths).toEqual(['/', '/watchlist', '/videos', '/keywords', '/trends', '/ratings', '/explore', '/creators', '/compare', '/brands', '/taxonomy', '/coverage', '/api-docs']);
+    expect(NAV_SECTIONS.flatMap((s) => s.items)).toHaveLength(13);
+    expect(NAV_ITEMS.map((i) => i.label)).toEqual(['대시보드', '관심 목록', '영상 탐색', '키워드 분석', '트렌드', '비디오 레이팅', '기회 탐색', '크리에이터', '크리에이터 비교', '브랜드 협업', '분류 체계', '데이터 범위', 'API']);
   });
   it('navItemFor matches nested paths and the exact dashboard', () => {
     expect(navItemFor('/')?.label).toBe('대시보드');

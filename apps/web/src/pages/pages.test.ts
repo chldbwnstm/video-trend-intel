@@ -23,6 +23,8 @@ import TaxonomyPage from './Taxonomy.tsx';
 import CoveragePage from './Coverage.tsx';
 import ApiDocsPage from './ApiDocs.tsx';
 import NotFoundPage from './NotFound.tsx';
+import WatchlistPage from './Watchlist.tsx';
+import KeywordsPage from './Keywords.tsx';
 
 const dataset = generateSampleDataset({ videos: 400 });
 const value: DatasetContextValue = {
@@ -121,6 +123,8 @@ describe('placeholder pages', () => {
     ['/taxonomy', '/taxonomy', TaxonomyPage, '분류 체계'],
     ['/coverage', '/coverage', CoveragePage, '데이터 범위'],
     ['/api-docs', '/api-docs', ApiDocsPage, 'API'],
+    ['/watchlist', '/watchlist', WatchlistPage, '관심 목록이 비어 있음'],
+    ['/keywords', '/keywords', KeywordsPage, '키워드 분석'],
     ['/nope', '*', NotFoundPage, '페이지를 찾을 수 없음'],
   ];
   it.each(pages)('%s renders', (url, path, Page, expected) => {

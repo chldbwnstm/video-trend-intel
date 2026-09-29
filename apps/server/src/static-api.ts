@@ -13,6 +13,9 @@
  *                                                upload by views_total
  *   trending/<kind>-<preset>.json                kind = topic|category|creator|account, preset = last7d|rolling7d
  *   creators/top-<preset>.json                   preset = last30d|rolling30d
+ *   keywords/index.json · keywords/<i>.json      keyword reports (rolling7d, top 20 videos) for the collector seed
+ *                                                keywords (packages/collector/seeds/keywords.json; CLI default,
+ *                                                --keywords <file> to change; library callers pass opts.keywords)
  * Output is deterministic: a pure function of the dataset (now = generatedAt) and the options; no wall-clock
  * times, stable key order, files listed in sorted order. Files listed in a previous index.json that are no
  * longer produced are removed (nothing else in the output dir is touched).
@@ -28,6 +31,7 @@ import { buildCoverage } from './routes/coverage.ts';
 import { buildTaxonomy } from './routes/taxonomy.ts';
 import { trendingPayload } from './routes/trending.ts';
 import { creatorsPayload } from './routes/creators.ts';
+import { parseKeywordSeeds, staticKeywordFiles, type StaticKeywordSeed } from './routes/keywords.ts';
 import { buildOpenApi } from './openapi.ts';
 import { TREND_KINDS, isValidTimeZone, rangeEcho, type ResolvedRangeParam } from './params.ts';
 
@@ -45,6 +49,8 @@ export interface StaticApiOptions {
   tz?: string;
   /** Rows per top-videos file (default 100). */
   limit?: number;
+  /** Seed keywords to precompute keyword reports for (keywords/<i>.json + keywords/index.json); none by default. */
+  keywords?: readonly StaticKeywordSeed[];
 }
 
 export interface StaticFile {
@@ -136,6 +142,14 @@ export function staticApiEntries(index: DatasetIndex, opts: StaticApiOptions = {
     });
   }
 
+  if (opts.keywords?.length) {
+    const kw = staticKeywordFiles(index, opts.keywords, tz);
+    entries.push({ path: 'keywords/index.json', description: `키워드 분석 목록 — 수집기 시드 키워드 ${kw.count}개, rolling7d 요약`, build: kw.indexFile });
+    opts.keywords.forEach((s, i) => {
+      entries.push({ path: `keywords/${i}.json`, description: `키워드 분석 '${s.keyword}' — rolling7d, 상위 영상 20개`, build: () => kw.file(i) });
+    });
+  }
+
   entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return entries;
 }
@@ -220,18 +234,22 @@ export function writeStaticApi(index: DatasetIndex, outDir: string, opts: Static
  * CLI
  * ---------------------------------------------------------------------------------------- */
 
-const USAGE = `usage: npx tsx apps/server/src/static-api.ts [--dataset <dataset.json>] [--out <dir>] [--tz <IANA zone>] [--limit <n>]
+const USAGE = `usage: npx tsx apps/server/src/static-api.ts [--dataset <dataset.json>] [--out <dir>] [--tz <IANA zone>] [--limit <n>] [--keywords <file|none>]
   --dataset   compact dataset (default: data/export/dataset.json, else apps/web/public/data/dataset.json)
   --out       output dir (default: apps/web/dist/api/v1)
   --tz        time zone for local dates (default: ${DEFAULT_TZ})
-  --limit     rows per top-videos / creators file (default: 100)`;
+  --limit     rows per top-videos / creators file (default: 100)
+  --keywords  seed keywords JSON for keywords/*.json (default: packages/collector/seeds/keywords.json; none = skip)`;
 
-export function parseCliArgs(argv: readonly string[], cwd: string = process.cwd()): { dataset: string; out: string; tz: string; limit: number } | { help: true } {
+/** Default seed keywords file (collector discovery seeds). */
+export const DEFAULT_KEYWORD_SEEDS = join(REPO_ROOT, 'packages', 'collector', 'seeds', 'keywords.json');
+
+export function parseCliArgs(argv: readonly string[], cwd: string = process.cwd()): { dataset: string; out: string; tz: string; limit: number; keywords: string | null } | { help: true } {
   const values: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') return { help: true };
-    const m = /^--(dataset|out|tz|limit)(?:=(.*))?$/.exec(a);
+    const m = /^--(dataset|out|tz|limit|keywords)(?:=(.*))?$/.exec(a);
     if (!m) throw new Error(`unknown argument: ${a}`);
     const v = m[2] ?? argv[++i];
     if (v === undefined || v === '') throw new Error(`--${m[1]} needs a value`);
@@ -245,7 +263,13 @@ export function parseCliArgs(argv: readonly string[], cwd: string = process.cwd(
   if (!isValidTimeZone(tz)) throw new Error(`unknown time zone: ${tz}`);
   const limit = values.limit !== undefined ? Number(values.limit) : 100;
   if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('--limit must be an integer between 1 and 1000');
-  return { dataset, out: values.out ? abs(values.out) : join(REPO_ROOT, 'apps', 'web', 'dist', 'api', 'v1'), tz, limit };
+  const keywords = values.keywords === 'none' ? null : values.keywords ? abs(values.keywords) : existsSync(DEFAULT_KEYWORD_SEEDS) ? DEFAULT_KEYWORD_SEEDS : null;
+  return { dataset, out: values.out ? abs(values.out) : join(REPO_ROOT, 'apps', 'web', 'dist', 'api', 'v1'), tz, limit, keywords };
+}
+
+/** Seed keywords from a JSON file (array of { keyword, category?, language? } or strings). */
+export function loadKeywordSeeds(path: string): StaticKeywordSeed[] {
+  return parseKeywordSeeds(JSON.parse(readFileSync(path, 'utf8')));
 }
 
 export function loadIndexFromFile(path: string): DatasetIndex {
@@ -267,7 +291,8 @@ export function cliMain(argv: readonly string[]): number {
   }
   const t0 = Date.now();
   const index = loadIndexFromFile(args.dataset);
-  const res = writeStaticApi(index, args.out, { tz: args.tz, limit: args.limit });
+  const keywords = args.keywords ? loadKeywordSeeds(args.keywords) : [];
+  const res = writeStaticApi(index, args.out, { tz: args.tz, limit: args.limit, keywords });
   process.stdout.write(
     `static API: ${res.written.length} file(s), ${(res.bytes / 1_000_000).toFixed(2)} MB -> ${res.outDir}` +
       (res.removed.length ? ` (removed ${res.removed.length} stale file(s))` : '') +

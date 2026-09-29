@@ -92,6 +92,7 @@ export function buildOpenApi(): Json {
       { name: 'system', description: '상태·메타데이터' },
       { name: 'videos', description: '영상 탐색 (Video Intelligence)' },
       { name: 'trends', description: '트렌드·기회 탐색' },
+      { name: 'keywords', description: '키워드 분석 (추적 영상 범위 안의 키워드별 업로드·조회·점유율)' },
       { name: 'creators', description: '크리에이터 포트폴리오' },
       { name: 'reference', description: '분류 체계·데이터 범위·원자료' },
     ],
@@ -203,6 +204,38 @@ export function buildOpenApi(): Json {
           responses: { '200': jsonResponse(ref('Explore')), ...COMMON_ERRORS },
         },
       },
+      '/api/v1/keywords': {
+        get: {
+          tags: ['keywords'],
+          operationId: 'getKeywords',
+          summary: '키워드 분석: 키워드 1~5개의 일치 영상 수, 기간 업로드(현지 날짜별), 기간 조회 증가 합계(상태 포함), 플랫폼별 점유율, 상위 영상·크리에이터, 분야·언어·관련 주제·협찬',
+          description:
+            '조회 발생 기간 기준입니다(기본 rolling7d). 일치 규칙: 제목·태그·주제·설명(최대 300자)을 정규화해 찾고, 한글·일본어는 띄어쓰기와 관계없는 부분 일치, 4자 이하 영문은 단어 단위, 더 긴 영문은 단어 시작 일치입니다. ' +
+            '합계는 계산 불가 값을 0으로 세지 않고 하한(≥)으로 표시하며, 여러 플랫폼 합계에는 crossPlatform=true가 붙습니다. 점유율(shareOfVoice)은 플랫폼마다 따로, 조회 점유율은 계산 가능한(정확·보간·원천) 영상만으로 계산합니다. ' +
+            'format=csv이면 키워드별 상위 영상을 영상 탐색 CSV와 같은 열(+ 키워드, 순위)로 반환합니다. 추적 중인 영상 범위 안의 결과이며 플랫폼 전체 검색량이 아닙니다.',
+          parameters: [
+            { name: 'q', in: 'query', required: true, description: '키워드 1~5개(쉼표로 구분, 각 최대 100자). 별칭: kw(웹 앱 URL 키), keywords, keyword.', style: 'form', explode: false, schema: arrayOf({ type: 'string', maxLength: 100 }) },
+            { name: 'match', in: 'query', description: '여러 단어 키워드: all(모든 단어 포함) 또는 any(한 단어라도).', schema: { type: 'string', enum: ['all', 'any'], default: 'all' } },
+            listParam('fields', '검색할 필드 (기본 전체).', { type: 'string', enum: ['title', 'tags', 'topics', 'description'] }, ['field']),
+            ...RANGE_PARAMS,
+            pref('platforms'),
+            pref('cats'),
+            pref('langs'),
+            { name: 'top', in: 'query', description: '키워드별 상위 영상 수 (0이면 생략). 별칭: limit.', schema: { type: 'integer', minimum: 0, maximum: 50, default: 10 } },
+            { name: 'format', in: 'query', description: '응답 형식.', schema: { type: 'string', enum: ['json', 'csv'], default: 'json' } },
+          ],
+          responses: {
+            '200': {
+              ...jsonResponse(ref('Keywords')),
+              content: {
+                'application/json': { schema: ref('Keywords') },
+                'text/csv': { schema: { type: 'string', description: 'UTF-8 with BOM, CRLF; 키워드, 키워드 내 순위 + /api/v1/videos CSV 열' } },
+              },
+            },
+            ...COMMON_ERRORS,
+          },
+        },
+      },
       '/api/v1/creators': {
         get: {
           tags: ['creators'],
@@ -268,7 +301,7 @@ export function buildOpenApi(): Json {
         get: {
           tags: ['reference'],
           operationId: 'getStaticIndex',
-          summary: '정적 API 파일 목록 (meta.json, videos/{mode}/top-{preset}-{platform}.json, trending/{kind}-{preset}.json, creators/top-{preset}.json …). 각 경로를 /api/v1/<path>로 요청하면 같은 내용을 실시간으로 계산해 반환',
+          summary: '정적 API 파일 목록 (meta.json, videos/{mode}/top-{preset}-{platform}.json, trending/{kind}-{preset}.json, creators/top-{preset}.json, keywords/index.json …). 각 경로를 /api/v1/<path>로 요청하면 같은 내용을 실시간으로 계산해 반환',
           responses: {
             '200': jsonResponse({
               type: 'object',
@@ -566,6 +599,76 @@ export function buildOpenApi(): Json {
                 supplyPercentile: { type: 'number' },
                 score: { type: 'number' },
                 sampleVideoIds: arrayOf({ type: 'string' }),
+              },
+            }),
+            notes: arrayOf({ type: 'string' }),
+          },
+        },
+        KeywordSum: {
+          type: 'object',
+          description: '영상별 기간 조회 증가의 합계. 계산 불가 영상(unknown)은 0으로 세지 않고 합계를 lower_bound로 만듭니다.',
+          allOf: [ref('MetricValue')],
+          properties: {
+            videos: { type: 'integer' },
+            unknown: { type: 'integer' },
+            decreased: { type: 'integer' },
+            notProvided: { type: 'integer' },
+            platforms: arrayOf({ type: 'string', enum: PLATFORMS }),
+            crossPlatform: { type: 'boolean', description: '여러 플랫폼 조회수를 더함 (단위가 다름)' },
+          },
+        },
+        Keywords: {
+          type: 'object',
+          properties: {
+            query: { type: 'object' },
+            now: { type: 'integer' },
+            window: ref('Window'),
+            match: { type: 'string', enum: ['all', 'any'] },
+            fields: arrayOf({ type: 'string' }),
+            scopeVideos: { type: 'integer', description: '필터 적용 후 기간 끝까지 게시된 추적 영상 수' },
+            scopePlatforms: arrayOf({ type: 'string', enum: PLATFORMS }),
+            days: arrayOf({ type: 'object', properties: { date: { type: 'string', format: 'date' }, partial: { type: 'boolean' } } }),
+            overlapVideos: { type: 'integer' },
+            keywords: arrayOf({
+              type: 'object',
+              properties: {
+                keyword: { type: 'string' },
+                terms: arrayOf({ type: 'object', properties: { text: { type: 'string' }, mode: { type: 'string', enum: ['substring', 'word', 'prefix'] } } }),
+                videos: { type: 'integer' },
+                uploadsInWindow: { type: 'integer' },
+                accounts: { type: 'integer' },
+                daily: arrayOf({ type: 'integer' }),
+                viewsPeriod: ref('KeywordSum'),
+                statusCounts: { type: 'object', additionalProperties: { type: 'integer' } },
+                fieldHits: { type: 'object', additionalProperties: { type: 'integer' } },
+                platforms: arrayOf({ type: 'object' }),
+                topVideos: arrayOf({ type: 'object' }),
+                topCreators: arrayOf({ type: 'object' }),
+                categories: arrayOf({ type: 'object', properties: { id: { type: 'string' }, label: { type: 'string' }, count: { type: 'integer' } } }),
+                uncategorized: { type: 'integer' },
+                languages: arrayOf({ type: 'object', properties: { code: nullable({ type: 'string' }), count: { type: 'integer' } } }),
+                relatedTopics: arrayOf({ type: 'object', properties: { topic: { type: 'string' }, support: { type: 'integer' }, overall: { type: 'integer' }, lift: { type: 'number' }, accounts: { type: 'integer' } } }),
+                sponsored: { type: 'object' },
+                notes: arrayOf({ type: 'string' }),
+              },
+            }),
+            shareOfVoice: arrayOf({
+              type: 'object',
+              properties: {
+                platform: { type: 'string', enum: PLATFORMS },
+                totalUploads: { type: 'integer' },
+                items: arrayOf({
+                  type: 'object',
+                  properties: {
+                    keyword: { type: 'string' },
+                    uploads: { type: 'integer' },
+                    uploadShare: nullable({ type: 'number' }),
+                    measuredViews: { type: 'number' },
+                    measuredVideos: { type: 'integer' },
+                    excludedVideos: { type: 'integer' },
+                    viewShare: ref('MetricValue'),
+                  },
+                }),
               },
             }),
             notes: arrayOf({ type: 'string' }),

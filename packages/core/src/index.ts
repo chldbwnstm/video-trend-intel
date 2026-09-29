@@ -11,3 +11,4 @@ export * from './taxonomy.ts';
 export * from './sponsorship.ts';
 export * from './text.ts';
 export * from './csv.ts';
+export * from './keywords.ts';

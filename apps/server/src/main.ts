@@ -26,6 +26,7 @@ import type { CompactDataset, DatasetIndex } from '@vti/core';
 import { ADAPTERS, createLogger } from '@vti/collector';
 import { createApp, type AppLogger } from './app.ts';
 import { Scheduler, createCollectJob, type SchedulerStatus } from './scheduler.ts';
+import { DEFAULT_KEYWORD_SEEDS, loadKeywordSeeds } from './static-api.ts';
 
 export const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -375,6 +376,8 @@ export async function main(env: Record<string, string | undefined> = process.env
     trustProxy: cfg.trustProxy,
     log,
     getStatus: () => serverStatus(loader, scheduler, cfg.healthVerbose),
+    // Same seed keywords as the GitHub Pages static API, so keywords/*.json resolve on the server too.
+    staticKeywords: existsSync(DEFAULT_KEYWORD_SEEDS) ? loadKeywordSeeds(DEFAULT_KEYWORD_SEEDS) : [],
   });
   if (cfg.healthVerbose) log.warn('HEALTH_VERBOSE=1: /api/v1/health shows filesystem paths and raw errors to anyone who can reach this server');
   if (!existsSync(cfg.webDistDir)) log.warn(`web build not found at ${cfg.webDistDir} (run \`npm run build\`); serving the API only`);

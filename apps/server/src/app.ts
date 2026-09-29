@@ -29,6 +29,7 @@ import { registerExplore } from './routes/explore.ts';
 import { registerCreators } from './routes/creators.ts';
 import { registerTaxonomy } from './routes/taxonomy.ts';
 import { registerCoverage } from './routes/coverage.ts';
+import { registerKeywords, type StaticKeywordSeed } from './routes/keywords.ts';
 import { buildOpenApi } from './openapi.ts';
 import { serializeStatic, staticApiEntries, staticIndex, type StaticEntry } from './static-api.ts';
 
@@ -62,6 +63,8 @@ export interface CreateAppOptions {
   trustProxy?: boolean;
   /** Extra fields for /api/v1/health (loader / scheduler state). */
   getStatus?: () => Record<string, unknown>;
+  /** Seed keywords whose static reports (keywords/<i>.json, as written by static-api) are also served live. Default none. */
+  staticKeywords?: readonly StaticKeywordSeed[];
   /** Response cache size in bytes (0 disables). Default 48 MB. */
   cacheBytes?: number;
   clock?: () => number;
@@ -173,6 +176,7 @@ export function datasetEtag(index: DatasetIndex, scope = 'api'): string {
  * ---------------------------------------------------------------------------------------- */
 
 interface StaticState {
+  keywords: readonly StaticKeywordSeed[] | undefined;
   entries: Map<string, StaticEntry>;
   bodies: Map<string, string>;
   index: string | null;
@@ -180,18 +184,18 @@ interface StaticState {
 
 const staticStates = new WeakMap<DatasetIndex, StaticState>();
 
-function staticState(index: DatasetIndex): StaticState {
+function staticState(index: DatasetIndex, keywords?: readonly StaticKeywordSeed[]): StaticState {
   let st = staticStates.get(index);
-  if (!st) {
-    st = { entries: new Map(staticApiEntries(index).map((e) => [e.path, e])), bodies: new Map(), index: null };
+  if (!st || st.keywords !== keywords) {
+    st = { keywords, entries: new Map(staticApiEntries(index, { keywords }).map((e) => [e.path, e])), bodies: new Map(), index: null };
     staticStates.set(index, st);
   }
   return st;
 }
 
 /** Serialized body of one static file (`index.json` builds every file once to report sizes). Null = unknown path. */
-export function staticBody(index: DatasetIndex, path: string): string | null {
-  const st = staticState(index);
+export function staticBody(index: DatasetIndex, path: string, keywords?: readonly StaticKeywordSeed[]): string | null {
+  const st = staticState(index, keywords);
   const one = (p: string): string => {
     let b = st.bodies.get(p);
     if (b === undefined) {
@@ -329,7 +333,7 @@ export function createApp(opts: CreateAppOptions): Hono {
     if ((c.req.method !== 'GET' && c.req.method !== 'HEAD') || !path.endsWith('.json') || path === `${API_PREFIX}/openapi.json`) return next();
     const index = opts.getIndex();
     if (!index) return next();
-    const body = staticBody(index, path.slice(API_PREFIX.length + 1));
+    const body = staticBody(index, path.slice(API_PREFIX.length + 1), opts.staticKeywords);
     if (body === null) return next();
     return c.body(body, 200, { 'Content-Type': 'application/json; charset=utf-8' });
   });
@@ -347,6 +351,7 @@ export function createApp(opts: CreateAppOptions): Hono {
         `${API_PREFIX}/videos/{id}`,
         `${API_PREFIX}/trending`,
         `${API_PREFIX}/explore`,
+        `${API_PREFIX}/keywords`,
         `${API_PREFIX}/creators`,
         `${API_PREFIX}/creators/{key}`,
         `${API_PREFIX}/taxonomy`,
@@ -401,6 +406,7 @@ export function createApp(opts: CreateAppOptions): Hono {
   registerCreators(api, deps);
   registerTaxonomy(api, deps);
   registerCoverage(api, deps);
+  registerKeywords(api, deps);
 
   app.route(API_PREFIX, api);
 

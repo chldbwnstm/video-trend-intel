@@ -18,7 +18,9 @@ import type { PageKey } from './lib/routePreload.ts';
 
 const PAGE_LOADERS: Record<PageKey, () => Promise<{ default: ComponentType }>> = {
   dashboard: () => import('./pages/Dashboard.tsx'),
+  watchlist: () => import('./pages/Watchlist.tsx'),
   videos: () => import('./pages/Videos.tsx'),
+  keywords: () => import('./pages/Keywords.tsx'),
   trends: () => import('./pages/Trends.tsx'),
   ratings: () => import('./pages/Ratings.tsx'),
   explore: () => import('./pages/Explore.tsx'),
@@ -42,7 +44,9 @@ export function preloadPageFor(hash: string): void {
 }
 
 const Dashboard = lazy(PAGE_LOADERS.dashboard);
+const Watchlist = lazy(PAGE_LOADERS.watchlist);
 const Videos = lazy(PAGE_LOADERS.videos);
+const Keywords = lazy(PAGE_LOADERS.keywords);
 const Trends = lazy(PAGE_LOADERS.trends);
 const Ratings = lazy(PAGE_LOADERS.ratings);
 const Explore = lazy(PAGE_LOADERS.explore);
@@ -72,7 +76,9 @@ export function AppRoutes() {
       <Route element={<AppShell />}>
         <Route element={<RequireDataset />}>
           <Route index element={<Dashboard />} />
+          <Route path="watchlist" element={<Watchlist />} />
           <Route path="videos" element={<Videos />} />
+          <Route path="keywords" element={<Keywords />} />
           <Route path="trends" element={<Trends />} />
           <Route path="ratings" element={<Ratings />} />
           <Route path="explore" element={<Explore />} />

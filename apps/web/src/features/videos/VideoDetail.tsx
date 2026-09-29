@@ -50,6 +50,7 @@ import {
   windowHoursLabel,
 } from './model.ts';
 import { ViewsChart } from './ViewsChart.tsx';
+import { WatchButton } from '../watchlist/WatchButton.tsx';
 
 const DAY_MS = 86_400_000;
 const MAX_OBS_ROWS = 200;
@@ -188,6 +189,7 @@ export function VideoDetailContent({ video, context, onFilterAccount }: VideoDet
               {platformLabel(video.platform)}에서 원본 보기 <ExternalLink className="size-3.5" aria-hidden />
             </a>
           ) : null}
+          <WatchButton kind="video" id={video.id} />
         </div>
       </div>
 

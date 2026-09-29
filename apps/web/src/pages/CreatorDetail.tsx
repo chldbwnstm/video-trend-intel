@@ -88,6 +88,7 @@ import {
 } from '../features/creators/parts.tsx';
 import type { HeatMode } from '../features/creators/parts.tsx';
 import { dataReadiness } from '../features/trends/readiness.ts';
+import { WatchButton } from '../features/watchlist/WatchButton.tsx';
 
 const DETAIL_PRESETS = ['rolling24h', 'rolling7d', 'rolling30d', 'today', 'yesterday', 'last7d', 'last30d', 'last90d', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth'] as const;
 
@@ -208,15 +209,18 @@ function CreatorDetail({ creatorKey }: { creatorKey: string }) {
           </span>
         }
         actions={
-          <Link
-            to={compareHref([creatorKey], { range: spec })}
-            className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[13px] font-medium text-on-accent hover:bg-accent-hover"
-          >
-            <GitCompareArrows className="size-4" aria-hidden />
-            <span>
-              <span className="hidden sm:inline">다른 크리에이터와 </span>비교
-            </span>
-          </Link>
+          <>
+            <WatchButton kind="creator" id={creatorKey} />
+            <Link
+              to={compareHref([creatorKey], { range: spec })}
+              className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[13px] font-medium text-on-accent hover:bg-accent-hover"
+            >
+              <GitCompareArrows className="size-4" aria-hidden />
+              <span>
+                <span className="hidden sm:inline">다른 크리에이터와 </span>비교
+              </span>
+            </Link>
+          </>
         }
       />
 

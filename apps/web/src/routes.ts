@@ -8,8 +8,10 @@ import {
   FolderTree,
   GitCompareArrows,
   Handshake,
+  Hash,
   LayoutDashboard,
   Search,
+  Star,
   TrendingUp,
   Trophy,
   Users,
@@ -47,6 +49,13 @@ export const NAV_SECTIONS: NavSection[] = [
         tubular: 'Viewpoint 홈',
         end: true,
       },
+      {
+        path: '/watchlist',
+        label: '관심 목록',
+        icon: Star,
+        description: '고정한 크리에이터·영상·키워드의 기간 지표, 고정 이후 증가, 지난 방문 이후 새 업로드 (이 브라우저에만 저장)',
+        tubular: 'Viewpoint (내 채널·경쟁 채널)',
+      },
     ],
   },
   {
@@ -59,6 +68,13 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Search,
         description: '세 가지 날짜 기준으로 영상 검색·필터·정렬, CSV 내보내기, 성장 곡선과 원본 관측값',
         tubular: 'Video Intelligence',
+      },
+      {
+        path: '/keywords',
+        label: '키워드 분석',
+        icon: Hash,
+        description: '키워드별 관련 영상의 기간 조회·업로드 추이, 플랫폼·크리에이터 분포',
+        tubular: 'Keyword Intelligence',
       },
       {
         path: '/trends',

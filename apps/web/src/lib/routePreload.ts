@@ -6,7 +6,9 @@
 
 export type PageKey =
   | 'dashboard'
+  | 'watchlist'
   | 'videos'
+  | 'keywords'
   | 'trends'
   | 'ratings'
   | 'explore'
@@ -22,7 +24,9 @@ export type PageKey =
 
 const EXACT: Record<string, PageKey> = {
   '/': 'dashboard',
+  '/watchlist': 'watchlist',
   '/videos': 'videos',
+  '/keywords': 'keywords',
   '/trends': 'trends',
   '/ratings': 'ratings',
   '/explore': 'explore',

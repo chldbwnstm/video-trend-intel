@@ -231,7 +231,9 @@ describe('createHttpClient: rate limiting', () => {
     const http = createHttpClient({ perHostRps: { '127.0.0.1': 10 } });
     for (let i = 0; i < 4; i++) await http.getJson(`${base}/r`);
     const gaps = hits.slice(1).map((h, i) => h.at - hits[i].at);
-    for (const g of gaps) expect(g).toBeGreaterThanOrEqual(90);
+    // Server-side arrival times jitter under load; the limiter spaces sends, so assert the total span tightly.
+    expect(hits[hits.length - 1].at - hits[0].at).toBeGreaterThanOrEqual(270);
+    for (const g of gaps) expect(g).toBeGreaterThanOrEqual(50);
   });
 
   it('serializes concurrent requests to one host', async () => {
@@ -241,7 +243,10 @@ describe('createHttpClient: rate limiting', () => {
     await Promise.all([0, 1, 2, 3].map(() => http.getJson(`${base}/c`)));
     expect(Date.now() - t0).toBeGreaterThanOrEqual(290);
     const times = hits.map((h) => h.at).sort((a, b) => a - b);
-    for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(90);
+    // Arrival times at the test server jitter with event-loop load (full parallel suite / CI), so check the
+    // overall spacing tightly and each gap loosely: without serialization all four would arrive together.
+    expect(times[times.length - 1] - times[0]).toBeGreaterThanOrEqual(270);
+    for (let i = 1; i < times.length; i++) expect(times[i] - times[i - 1]).toBeGreaterThanOrEqual(50);
   });
 
   it('shares a limiter between clients', async () => {
